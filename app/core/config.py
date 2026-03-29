@@ -85,6 +85,8 @@ class BackendSettings(BaseSettings):
     backend_cors_origins: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
+        "https://kodex-marketplace-frontend.vercel.app",
+        "https://*.vercel.app",
     ]
 
     @field_validator("backend_cors_origins", mode="before")
