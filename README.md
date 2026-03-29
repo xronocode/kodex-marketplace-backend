@@ -143,9 +143,9 @@ This project was built 100% with AI coding assistants under human engineering su
 
 | Category | Tools |
 |----------|-------|
-| **AI IDEs** | [Antigravity](https://antigravity.ai/) / [Codex](https://openai.com/codex) / [Qwen Code](https://github.com/QwenLM/Qwen) |
-| **Code Editors** | VS Code / [Kilo Code](https://kilocode.ai/) / QwenCode |
-| **LLM Models** | [Claude](https://anthropic.com/) / [Gemini](https://deepmind.google/technologies/gemini/) / Qwen |
+| **AI IDEs** | [Antigravity](https://antigravity.ai/) / [VS Code](https://code.visualstudio.com/) |
+| **Code Editors** | [VS Code](https://code.visualstudio.com/) / [Kilo Code](https://kilocode.ai/) / [QwenCode](https://github.com/QwenLM/Qwen) / [Codex](https://openai.com/codex) |
+| **LLM Models** | [Claude](https://anthropic.com/) / [Gemini](https://deepmind.google/technologies/gemini/) / [Qwen](https://qwenlm.github.io/) / [GLM-5/5.1](https://www.zhipuai.cn/) |
 
 ### Development Methodology
 
