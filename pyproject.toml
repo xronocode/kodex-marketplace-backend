@@ -1,0 +1,60 @@
+# --- GRACE MODULE_CONTRACT ---
+# PURPOSE: Project metadata and dependency declarations for Kodex backend.
+# SCOPE: Python package configuration, build system, all runtime/dev deps.
+# DEPENDS: Python >=3.12, PyPI packages listed below.
+# LINKS: app/* (all modules consume deps declared here)
+# --- GRACE MODULE_MAP ---
+# EXPORTS: project metadata (name, version, dependencies)
+# --- GRACE CHANGE_SUMMARY ---
+# 2026-03-28: Initial scaffolding — Phase 1 dependencies.
+
+# --- START_BLOCK_BUILD_SYSTEM ---
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+# --- END_BLOCK_BUILD_SYSTEM ---
+
+# --- START_BLOCK_PROJECT_META ---
+[project]
+name = "kodex-backend"
+version = "0.1.0"
+description = "Kodex marketplace backend — Phase 1 scaffolding"
+requires-python = ">=3.12"
+# --- END_BLOCK_PROJECT_META ---
+
+# --- START_BLOCK_DEPENDENCIES ---
+dependencies = [
+    "fastapi>=0.115.0,<0.116",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg",
+    "alembic>=1.14,<1.15",
+    "aioboto3>=13,<14",
+    "pydantic-settings>=2,<3",
+    "python-jose[cryptography]>=3,<4",
+    "passlib[bcrypt]>=1.7,<2",
+    "Pillow>=10,<11",
+    "Faker>=24,<25",
+    "uvicorn[standard]>=0.30,<1",
+    "python-multipart>=0.0.6",
+]
+# --- END_BLOCK_DEPENDENCIES ---
+
+# --- START_BLOCK_DEV_DEPENDENCIES ---
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.24,<1",
+    "httpx>=0.27,<1",
+    "ruff>=0.5,<1",
+    "mypy>=1.10,<2",
+]
+# --- END_BLOCK_DEV_DEPENDENCIES ---
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as requiring real database"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

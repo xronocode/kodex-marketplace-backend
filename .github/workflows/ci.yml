@@ -1,0 +1,103 @@
+# --- GRACE MODULE_CONTRACT ---
+# PURPOSE: CI/CD workflow for backend — run tests, lint, and type check on PR and push.
+# SCOPE: GitHub Actions workflow for kodex-backend repository.
+# DEPENDS: Python 3.12, pytest, ruff, mypy
+# LINKS: pyproject.toml (test/lint configuration)
+# --- GRACE MODULE_MAP ---
+# EXPORTS: GitHub Actions workflow definition
+# --- GRACE CHANGE_SUMMARY ---
+# 2026-03-29: Initial CI workflow for backend repository.
+
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'kodex-backend/**'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'kodex-backend/**'
+
+defaults:
+  run:
+    working-directory: kodex-backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kodex
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: kodex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: kodex-backend/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://kodex:testpassword@localhost:5432/kodex_test
+        run: |
+          alembic upgrade head
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://kodex:testpassword@localhost:5432/kodex_test
+        run: |
+          pytest tests/ -v --tb=short
+
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: kodex-backend/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+
+      - name: Run ruff lint
+        run: |
+          ruff check .
+
+      - name: Run mypy type check
+        run: |
+          mypy . --ignore-missing-imports

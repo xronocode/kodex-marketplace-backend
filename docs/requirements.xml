@@ -1,0 +1,151 @@
+<RequirementsAnalysis VERSION="0.2.0">
+  <!--
+  START_MODULE_CONTRACT
+  PURPOSE: Capture the Kodex Phase 0 product requirements, use cases, and hard constraints.
+  SCOPE: Actors, use cases, non-goals, delivery constraints, risks, and open questions.
+  DEPENDS: /Users/myevdokimov/prj/kodex/kodex-backend/AGENTS.md
+  LINKS: M-GOVERNANCE, DF-001, DF-002, DF-003, DF-004, DF-005, DF-006, DF-007
+  END_MODULE_CONTRACT
+  START_MODULE_MAP
+  project - Project identity and domain activation keywords
+  actors - Human and system actors for current and future phases
+  use-cases - UC-001 through UC-007 acceptance criteria
+  non-goals - Explicit exclusions that prevent overbuilding in Phase 1
+  constraints - Runtime and architecture constraints that cannot be violated
+  risks - Early delivery risks that require verification coverage
+  open-questions - Non-blocking questions to carry into implementation
+  END_MODULE_MAP
+  -->
+  <!-- START_BLOCK_PROJECT -->
+  <Project>
+    <name>Kodex</name>
+    <annotation>Multi-merchant marketplace platform with Agentic Commerce layer. Phase 1 = prototype (ТЗ). Built AI-only via GRACE methodology.</annotation>
+    <keywords>marketplace, fastapi, vue3, postgresql, minio, async, fsd, docker-compose, agentic-commerce, multi-merchant, rbac, llms-txt, ai-only-dev, grace</keywords>
+  </Project>
+  <!-- END_BLOCK_PROJECT -->
+
+  <!-- START_BLOCK_ACTORS -->
+  <Actors>
+    <actor-AnonymousVisitor>Anonymous visitor browsing the public catalog and product details without authentication.</actor-AnonymousVisitor>
+    <actor-PlatformAdmin>Platform administrator authenticating with username and password to manage the catalog.</actor-PlatformAdmin>
+    <actor-System>Seed/bootstrap process populating the database and storage on fresh environments.</actor-System>
+    <actor-ExternalLLMAgent>External LLM agent consuming llms.txt and machine-readable agent endpoints.</actor-ExternalLLMAgent>
+    <actor-MerchantAdmin>Future merchant-scoped operator managing only their own catalog and offers.</actor-MerchantAdmin>
+  </Actors>
+  <!-- END_BLOCK_ACTORS -->
+
+  <!-- START_BLOCK_USE_CASES -->
+  <UseCases>
+    <UC-001>
+      <Actor>Anonymous visitor</Actor>
+      <Action>Opens catalog, scrolls to load more products.</Action>
+      <Goal>Browse 100+ products with thumbnail, name, price, stock, and nearest_delivery_date.</Goal>
+      <Preconditions>Public API, catalog seed data, and frontend infinite scroll sentinel are available.</Preconditions>
+      <AcceptanceCriteria>Cursor pagination works. nearest_delivery_date = MIN(offers.delivery_date) computed on-the-fly per product. X-Total-Count header present.</AcceptanceCriteria>
+      <Priority>high</Priority>
+      <RelatedFlows>DF-001</RelatedFlows>
+    </UC-001>
+
+    <UC-002>
+      <Actor>Anonymous visitor</Actor>
+      <Action>Clicks product card, views detail modal.</Action>
+      <Goal>See full product image, attributes key-value pairs, and offers list.</Goal>
+      <Preconditions>Catalog list is available and product detail endpoint can resolve attributes and offers.</Preconditions>
+      <AcceptanceCriteria>Offers sortable by price (default) and delivery_date. Sort triggered without page reload.</AcceptanceCriteria>
+      <Priority>high</Priority>
+      <RelatedFlows>DF-002</RelatedFlows>
+    </UC-002>
+
+    <UC-003>
+      <Actor>Platform admin</Actor>
+      <Action>POST /v1/admin/auth/login with credentials.</Action>
+      <Goal>Receive Bearer JWT for subsequent admin requests.</Goal>
+      <Preconditions>Admin credentials are provided through environment variables and JWT configuration is loaded.</Preconditions>
+      <AcceptanceCriteria>Wrong credentials → 401. Token expires per config.</AcceptanceCriteria>
+      <Priority>high</Priority>
+      <RelatedFlows>DF-003</RelatedFlows>
+    </UC-003>
+
+    <UC-004>
+      <Actor>Platform admin</Actor>
+      <Action>CRUD products, sellers, offers; upload product image.</Action>
+      <Goal>Full catalog management via admin panel.</Goal>
+      <Preconditions>Admin JWT auth, MinIO bucket access, and thumbnail generation pipeline are configured.</Preconditions>
+      <AcceptanceCriteria>Image stored in MinIO as presigned URL. Thumbnail generated on upload (max 300x300 JPEG). Both URLs returned and stored in products.image_object_key / thumbnail_object_key.</AcceptanceCriteria>
+      <Priority>high</Priority>
+      <RelatedFlows>DF-004</RelatedFlows>
+    </UC-004>
+
+    <UC-005>
+      <Actor>System (seed script)</Actor>
+      <Action>Runs on fresh DB.</Action>
+      <Goal>Populate 100+ products, 2-6 attributes each, 5-8 sellers, and 2-8 offers per product.</Goal>
+      <Preconditions>Database schema is migrated and Faker-backed seed utilities are available.</Preconditions>
+      <AcceptanceCriteria>ALL delivery_date values = date.today() + timedelta(days=randint(0,6)). NEVER hardcoded. One demo merchant "Kodex Demo Store" created. All products assigned merchant_id of demo merchant.</AcceptanceCriteria>
+      <Priority>high</Priority>
+      <RelatedFlows>DF-005</RelatedFlows>
+    </UC-005>
+
+    <UC-006>
+      <Actor>External LLM agent (Claude, GPT, etc.)</Actor>
+      <Action>Fetches /llms.txt, calls /v1/agent/context, queries /v1/agent/search.</Action>
+      <Goal>Find products via natural language without UI.</Goal>
+      <Preconditions>Capability manifest, llms.txt discovery, and intent parsing are exposed over HTTP.</Preconditions>
+      <AcceptanceCriteria>/llms.txt returns plain text manifest. /agent/context returns structured capability JSON. /agent/search parses price/delivery/stock/name intents and returns filtered ProductListItem array. X-Query-Interpreted header shows parsed intent.</AcceptanceCriteria>
+      <Priority>high</Priority>
+      <RelatedFlows>DF-006</RelatedFlows>
+    </UC-006>
+
+    <UC-007>
+      <Actor>Merchant admin</Actor>
+      <Action>Login, view/edit only own products.</Action>
+      <Goal>Self-service catalog management.</Goal>
+      <Preconditions>JWT supports role=merchant_admin and merchant_id claims; catalog queries can be merchant-scoped.</Preconditions>
+      <AcceptanceCriteria>JWT contains role=merchant_admin + merchant_id. All queries scoped by merchant_id. Cannot see other merchants.</AcceptanceCriteria>
+      <Priority>medium</Priority>
+      <RelatedFlows>DF-007</RelatedFlows>
+      <Status>future</Status>
+    </UC-007>
+  </UseCases>
+  <!-- END_BLOCK_USE_CASES -->
+
+  <!-- START_BLOCK_NON_GOALS -->
+  <NonGoals>
+    <item-1>No checkout, orders, or payment processing in Phase 1.</item-1>
+    <item-2>No merchant self-service UI or merchant RBAC execution in Phase 1; schema preparation only.</item-2>
+    <item-3>No live recommendation engine integration in Phase 1; feature flags remain disabled by default.</item-3>
+    <item-4>No production deployment hardening in this session; Phase 0 is structure and planning only.</item-4>
+  </NonGoals>
+  <!-- END_BLOCK_NON_GOALS -->
+
+  <!-- START_BLOCK_CONSTRAINTS -->
+  <Constraints>
+    <constraint-1>All FastAPI request handlers must be async def and use awaited async I/O only.</constraint-1>
+    <constraint-2>Runtime PostgreSQL access must use SQLAlchemy 2.x async with asyncpg only; psycopg2 is forbidden.</constraint-2>
+    <constraint-3>Alembic is allowed only as sync CLI workflow (`alembic upgrade head`) and never inside request handlers.</constraint-3>
+    <constraint-4>Product delivery dates must always be generated as date.today() + timedelta(days=randint(0,6)); hardcoded values are forbidden.</constraint-4>
+    <constraint-5>All secrets must come from environment variables through configuration objects; no hardcoded secrets.</constraint-5>
+    <constraint-6>Frontend architecture must follow strict FSD layers: shared → entities → features → widgets → pages → app, with public-API-only imports.</constraint-6>
+    <constraint-7>Phase 1 schema must include merchant_id, status, russian search_vector, merchants, and agent_requests to avoid blocking Phase 2.</constraint-7>
+    <constraint-8>Local infrastructure must use Docker Compose with PostgreSQL and MinIO data stored outside containers via bind mounts.</constraint-8>
+  </Constraints>
+  <!-- END_BLOCK_CONSTRAINTS -->
+
+  <!-- START_BLOCK_RISKS -->
+  <Risks>
+    <risk-1>Async/sync boundary regressions in FastAPI or SQLAlchemy could silently violate the assignment constraints.</risk-1>
+    <risk-2>Thumbnail generation and MinIO upload flow couples Pillow, aioboto3, and DB persistence in one critical admin path.</risk-2>
+    <risk-3>Cursor pagination plus nearest_delivery_date aggregation can introduce N+1 or unstable ordering if repository queries are not designed carefully.</risk-3>
+    <risk-4>Natural-language agent search may drift from expected intent parsing unless response headers and audit logs make interpretation explicit.</risk-4>
+    <risk-5>Phase 2 merchant isolation can be blocked later if seller, merchant, and admin responsibilities are not separated cleanly during Phase 1 planning.</risk-5>
+  </Risks>
+  <!-- END_BLOCK_RISKS -->
+
+  <!-- START_BLOCK_OPEN_QUESTIONS -->
+  <OpenQuestions>
+    <question-1>Standardize the frontend Node.js LTS version before Phase 1b execution so local and container toolchains match exactly.</question-1>
+    <question-2>Clarify whether seller management remains platform-admin only after merchant self-service is introduced, or if sellers become merchant-owned entities.</question-2>
+    <question-3>Decide whether Phase 1 should emit JSON logs or key-value logs by default, while preserving the same stable block anchors either way.</question-3>
+  </OpenQuestions>
+  <!-- END_BLOCK_OPEN_QUESTIONS -->
+</RequirementsAnalysis>

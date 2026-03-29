@@ -1,0 +1,718 @@
+<VerificationPlan VERSION="0.2.3">
+  <!--
+  START_MODULE_CONTRACT
+  PURPOSE: Define the Kodex verification policy, critical flows, module checks, and phase gates before implementation starts.
+  SCOPE: Module-local checks, wave/phase gates, required log anchors, and evidence surfaces for backend, frontend, and infra.
+  DEPENDS: /Users/myevdokimov/prj/kodex/kodex-backend/docs/development-plan.xml
+  LINKS: V-M-GOVERNANCE, V-M-INFRA-COMPOSE, V-M-CONFIG, V-M-DB, V-M-SVC-PRODUCT, V-M-SVC-ADMIN, V-M-SVC-AGENT, V-M-FE-TOOLING, V-M-FE-SHARED-API, V-M-FE-ENTITIES-PRODUCT, V-M-FE-FEATURE-SCROLL, V-M-FE-WIDGET-MODAL, V-M-FE-PAGE-CATALOG, V-M-FE-APP
+  END_MODULE_CONTRACT
+  START_MODULE_MAP
+  global-policy - Shared verification rules and logging format
+  critical-flows - Cross-module success and failure scenarios
+  module-verification - Module-level checks, tests, and required evidence
+  phase-gates - Larger execution gates for Phase 0, Phase 1, Phase 1b, and Phase 2
+  failure-packets - Standardized divergence packet for fix loops
+  END_MODULE_MAP
+  -->
+  <!-- START_CHANGE_SUMMARY
+  v0.2.1 (2026-03-28): Added V-M-APP verification node for app boot and /llms.txt verification.
+  v0.2.2 (2026-03-28): Added V-M-MODELS-PLATFORM, V-M-REPO-OFFER, V-M-REPO-ADMIN nodes.
+  v0.2.3 (2026-03-29): Added missing backend and future verification nodes plus executable backend smoke-test coverage.
+  -->
+  <!-- START_BLOCK_GLOBAL_POLICY -->
+  <GlobalPolicy>
+    <log-format>[Module][function][BLOCK_NAME] message</log-format>
+    <deterministic-first>true</deterministic-first>
+    <module-level-focus>Fast deterministic checks close to the module with explicit async, auth, pagination, strict TypeScript, and FSD boundary assertions.</module-level-focus>
+    <wave-level-focus>Check only merged surfaces touched by the active wave, especially image upload, search interpretation, catalog browsing, admin session flow, and frontend FSD imports.</wave-level-focus>
+    <phase-level-focus>Run broader integration and regression checks, including infra boot, async API behavior, frontend type-check/lint/build, and UI interaction smoke tests.</phase-level-focus>
+    <frontend-static-first>Frontend module verification must pass type-check and FSD import linting before widget or page smoke checks are trusted.</frontend-static-first>
+    <redaction>Never log secrets, credentials, JWTs, or raw high-risk payloads. Stable headers may expose parsed intent summaries but not sensitive internals.</redaction>
+  </GlobalPolicy>
+  <!-- END_BLOCK_GLOBAL_POLICY -->
+
+  <!-- START_BLOCK_CRITICAL_FLOWS -->
+  <CriticalFlows>
+    <VF-001 NAME="BrowseCatalog" USE_CASES="UC-001" DATA_FLOW="DF-001" PRIORITY="high">
+      <scenario>Visitor scrolls the public catalog past page 2.</scenario>
+      <expected-outcome>API returns stable cursor-based pages with nearest_delivery_date and X-Total-Count header.</expected-outcome>
+      <required-signals>
+        <log-marker>[PublicApi][get_products][BLOCK_HANDLE_PUBLIC_PRODUCTS]</log-marker>
+        <trace-sequence>BLOCK_HANDLE_PUBLIC_PRODUCTS -&gt; BLOCK_BUILD_PUBLIC_PRODUCT_RESPONSE -&gt; BLOCK_LIST_PAGINATED</trace-sequence>
+      </required-signals>
+    </VF-001>
+
+    <VF-002 NAME="UploadImage" USE_CASES="UC-004" DATA_FLOW="DF-004" PRIORITY="high">
+      <scenario>Admin uploads a product image and receives original plus thumbnail URLs.</scenario>
+      <expected-outcome>Original and 300x300 JPEG thumbnail are stored in MinIO, keys are persisted, and presigned URLs are returned.</expected-outcome>
+      <required-signals>
+        <log-marker>[AdminCatalogApi][upload_image][BLOCK_HANDLE_IMAGE_UPLOAD]</log-marker>
+        <trace-sequence>BLOCK_HANDLE_IMAGE_UPLOAD -&gt; BLOCK_UPLOAD_AND_PERSIST_IMAGE -&gt; BLOCK_UPLOAD_THUMBNAIL_PAIR</trace-sequence>
+      </required-signals>
+    </VF-002>
+
+    <VF-003 NAME="AgentSearch" USE_CASES="UC-006" DATA_FLOW="DF-006" PRIORITY="high">
+      <scenario>External LLM agent searches for "беспроводные наушники до 5000".</scenario>
+      <expected-outcome>Intent is parsed into name and max_price filters, results match ProductListItem shape, and X-Query-Interpreted exposes parsed intent.</expected-outcome>
+      <required-signals>
+        <log-marker>[AgentService][search_products][BLOCK_PARSE_QUERY_INTENT]</log-marker>
+        <trace-sequence>BLOCK_HANDLE_AGENT_SEARCH -&gt; BLOCK_PARSE_QUERY_INTENT -&gt; BLOCK_LIST_PAGINATED</trace-sequence>
+      </required-signals>
+    </VF-003>
+
+    <VF-004 NAME="SeedDates" USE_CASES="UC-005" DATA_FLOW="DF-005" PRIORITY="high">
+      <scenario>Seed runs on a fresh database.</scenario>
+      <expected-outcome>All delivery dates stay in the current week window and every product belongs to the demo merchant.</expected-outcome>
+      <required-signals>
+        <log-marker>[Seed][run_seed][BLOCK_GENERATE_DELIVERY_DATES]</log-marker>
+        <trace-sequence>BLOCK_GENERATE_DELIVERY_DATES -&gt; RETURNED</trace-sequence>
+      </required-signals>
+    </VF-004>
+
+    <VF-005 NAME="FrontendCatalogUx" USE_CASES="UC-001,UC-002,UC-006" DATA_FLOW="DF-001,DF-002,DF-006" PRIORITY="high">
+      <scenario>Frontend user browses the catalog, opens a product modal, sorts offers, and replaces the grid with agent-search results.</scenario>
+      <expected-outcome>FSD layers remain isolated, infinite scroll triggers correctly, ProductModal re-fetches on sort changes, and the agent-search handler can safely reset the visible product list.</expected-outcome>
+      <required-signals>
+        <log-marker>[InfiniteScroll][loadPage][BLOCK_LOAD_PAGE]</log-marker>
+        <log-marker>[CatalogPage][agentSearch][BLOCK_AGENT_SEARCH_HANDLER]</log-marker>
+        <log-marker>[ProductModal][watchProductId][BLOCK_FETCH_ON_ID_CHANGE]</log-marker>
+        <trace-sequence>BLOCK_LOAD_PAGE -&gt; BLOCK_AGENT_SEARCH_HANDLER -&gt; BLOCK_FETCH_ON_ID_CHANGE</trace-sequence>
+      </required-signals>
+    </VF-005>
+
+    <VF-006 NAME="FutureMerchantIsolation" USE_CASES="UC-007" DATA_FLOW="DF-007" PRIORITY="medium">
+      <scenario>Merchant admin attempts to access a product outside their merchant scope.</scenario>
+      <expected-outcome>RBAC denies access before data leaves the repository/service chain.</expected-outcome>
+      <required-signals>
+        <log-marker>[RBAC][require_role][BLOCK_CHECK_ROLE_SCOPE]</log-marker>
+        <trace-sequence>BLOCK_CHECK_ROLE_SCOPE -&gt; BLOCK_ENFORCE_MERCHANT_SCOPE</trace-sequence>
+      </required-signals>
+    </VF-006>
+
+    <VF-007 NAME="FrontendAdminSession" USE_CASES="UC-003,UC-004" DATA_FLOW="DF-003,DF-004" PRIORITY="high">
+      <scenario>Frontend admin logs in, loads the product table, and performs an authenticated image upload or CRUD mutation.</scenario>
+      <expected-outcome>Login stores the Bearer token, protected routes redirect when unauthenticated, and all admin requests flow through the shared API client with auth headers attached.</expected-outcome>
+      <required-signals>
+        <log-marker>[FrontendShared][client][BLOCK_AUTH_INTERCEPTOR]</log-marker>
+        <log-marker>[AdminPage][loadProducts][BLOCK_LOAD_PRODUCTS]</log-marker>
+        <trace-sequence>BLOCK_SUBMIT_LOGIN -&gt; BLOCK_AUTH_INTERCEPTOR -&gt; BLOCK_LOAD_PRODUCTS</trace-sequence>
+      </required-signals>
+    </VF-007>
+
+    <VF-008 NAME="FrontendVoiceFallback" USE_CASES="UC-006" DATA_FLOW="DF-006" PRIORITY="high">
+      <scenario>Browser lacks Web Speech API support and the user still performs agent search through the text input.</scenario>
+      <expected-outcome>Mic button stays hidden without errors, keyboard search still hits the agent endpoint, and the page shows interpreted intent when present.</expected-outcome>
+      <required-signals>
+        <log-marker>[VoiceSearch][support][BLOCK_SUPPORT_CHECK]</log-marker>
+        <log-marker>[VoiceSearch][agentSearch][BLOCK_AGENT_SEARCH]</log-marker>
+        <trace-sequence>BLOCK_SUPPORT_CHECK -&gt; BLOCK_AGENT_SEARCH_HANDLER -&gt; BLOCK_AGENT_SEARCH</trace-sequence>
+      </required-signals>
+    </VF-008>
+  </CriticalFlows>
+  <!-- END_BLOCK_CRITICAL_FLOWS -->
+
+  <!-- START_BLOCK_MODULE_VERIFICATION -->
+  <ModuleVerification>
+    <V-M-GOVERNANCE MODULE="M-GOVERNANCE" PRIORITY="high">
+      <test-files><file>docs/requirements.xml</file><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: all referenced module IDs and verification refs remain aligned.</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Every planned module has a matching graph node or future stub.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[Governance][sync][BLOCK_SYNC_ARTIFACTS]</marker-1></required-log-markers>
+      <wave-follow-up>Run grace-refresh or equivalent artifact sync when architecture changes.</wave-follow-up>
+      <phase-follow-up>Run grace-reviewer with 0 critical issues before phase completion.</phase-follow-up>
+    </V-M-GOVERNANCE>
+
+    <V-M-INFRA-ENV MODULE="M-INFRA-ENV" PRIORITY="high">
+      <test-files><file>../kodex-infra/.env.example</file></test-files>
+      <module-checks><check-1>Static review: all required env vars for DB, S3, auth, CORS, and feature flags are present.</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Compose and backend config can start from the env template without missing variables.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[InfraEnv][define][BLOCK_DEFINE_ENV_CONTRACT]</marker-1></required-log-markers>
+      <wave-follow-up>Validate config parsing in backend tests.</wave-follow-up>
+      <phase-follow-up>Keep env template aligned with deployment docs.</phase-follow-up>
+    </V-M-INFRA-ENV>
+
+    <V-M-INFRA-COMPOSE MODULE="M-INFRA-COMPOSE" PRIORITY="high">
+      <test-files><file>../kodex-infra/docker-compose.yml</file></test-files>
+      <module-checks><check-1>docker compose config</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Backend starts after postgres healthcheck and data volumes are bind-mounted outside containers.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[InfraCompose][define][BLOCK_DEFINE_SERVICE_DEPENDENCIES]</marker-1></required-log-markers>
+      <wave-follow-up>Bring stack up before backend/frontend phase verification.</wave-follow-up>
+      <phase-follow-up>Confirm hot reload for both services.</phase-follow-up>
+    </V-M-INFRA-COMPOSE>
+
+    <V-M-CONFIG MODULE="M-CONFIG" PRIORITY="high">
+      <test-files><file>tests/core/test_config.py</file></test-files>
+      <module-checks><check-1>pytest tests/core/test_config.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Valid env produces settings object with derived service URLs.</scenario-1><scenario-2 kind="failure">Missing secret or malformed URL fails fast.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[Config][get_settings][BLOCK_LOAD_SETTINGS]</marker-1></required-log-markers>
+      <wave-follow-up>Re-run when env contract changes.</wave-follow-up>
+      <phase-follow-up>Confirm all runtime secrets still come from env.</phase-follow-up>
+    </V-M-CONFIG>
+
+    <V-M-APP MODULE="M-APP" PRIORITY="high">
+      <test-files><file>tests/api/test_app.py</file></test-files>
+      <module-checks><check-1>pytest tests/api/test_app.py -q</check-1></module-checks>
+      <scenarios>
+        <scenario-1 kind="success">FastAPI app boots with CORS, all routers mounted, /health and /llms.txt accessible.</scenario-1>
+        <scenario-2 kind="success">/llms.txt returns plain text manifest per llmstxt.org spec.</scenario-2>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[App][BLOCK_REGISTER_ROUTERS]</marker-1>
+        <marker-1>[App][llms_txt][BLOCK_LLMS_TXT_ENDPOINT]</marker-1>
+      </required-log-markers>
+      <wave-follow-up>Run app boot test after any router or middleware changes.</wave-follow-up>
+      <phase-follow-up>Confirm /llms.txt stays at app root and remains in sync with agent capabilities.</phase-follow-up>
+    </V-M-APP>
+
+    <V-M-DB MODULE="M-DB" PRIORITY="high">
+      <test-files><file>tests/core/test_database.py</file></test-files>
+      <module-checks><check-1>pytest tests/core/test_database.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">AsyncSession dependency yields usable session.</scenario-1><scenario-2 kind="failure">Sync driver or blocking call is rejected by review.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[Database][get_session][BLOCK_CREATE_SESSION]</marker-1></required-log-markers>
+      <wave-follow-up>Run async API tests against a live postgres container.</wave-follow-up>
+      <phase-follow-up>Audit all handlers for sync DB calls.</phase-follow-up>
+    </V-M-DB>
+
+    <V-M-AUTH MODULE="M-AUTH" PRIORITY="high">
+      <test-files><file>tests/core/test_auth.py</file></test-files>
+      <module-checks><check-1>pytest tests/core/test_auth.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Default admin credentials produce a platform_admin JWT.</scenario-1><scenario-2 kind="failure">Invalid credentials or invalid tokens do not produce a privileged payload.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[Auth][BLOCK_CREATE_ACCESS_TOKEN]</marker-1></required-log-markers>
+      <wave-follow-up>Exercise admin auth routes through the API layer after auth changes.</wave-follow-up>
+      <phase-follow-up>Extend tests when merchant_admin and merchant_id claims are added.</phase-follow-up>
+    </V-M-AUTH>
+
+    <V-M-MIGRATIONS MODULE="M-MIGRATIONS" PRIORITY="high">
+      <test-files><file>tests/migrations/test_phase1_schema.py</file></test-files>
+      <module-checks><check-1>alembic upgrade head</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Phase 1 schema includes merchants, agent_requests, product merchant_id, status, and search_vector.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[Migrations][upgrade][BLOCK_APPLY_PHASE1_SCHEMA]</marker-1></required-log-markers>
+      <wave-follow-up>Inspect generated SQL or resulting columns on a fresh DB.</wave-follow-up>
+      <phase-follow-up>Confirm Phase 2 prep columns match the knowledge graph.</phase-follow-up>
+    </V-M-MIGRATIONS>
+
+    <V-M-MODELS-CATALOG MODULE="M-MODELS-CATALOG" PRIORITY="high">
+      <test-files><file>tests/models/test_catalog_models.py</file></test-files>
+      <module-checks><check-1>pytest tests/models/test_catalog_models.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Product model exposes merchant_id, status, and search_vector for Phase 2 prep.</scenario-1><scenario-2 kind="success">Seller, offer, and product attribute tables expose the expected catalog schema.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[CatalogModels][schema][BLOCK_DECLARE_CATALOG_SCHEMA]</marker-1></required-log-markers>
+      <wave-follow-up>Keep model columns aligned with the Phase 1 migration file.</wave-follow-up>
+      <phase-follow-up>Extend assertions when merchant-scoped catalog logic lands.</phase-follow-up>
+    </V-M-MODELS-CATALOG>
+
+    <V-M-MODELS-PLATFORM MODULE="M-MODELS-PLATFORM" PRIORITY="high">
+      <test-files><file>tests/models/test_platform_models.py</file></test-files>
+      <module-checks><check-1>pytest tests/models/test_platform_models.py -q</check-1></module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Merchant model has id, name, slug, is_active, created_at, updated_at.</scenario-1>
+        <scenario-2 kind="success">AgentRequest model has endpoint, query, interpreted_intent, result_count, response_ms, created_at.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[PlatformModels][schema][BLOCK_DECLARE_PLATFORM_SCHEMA]</marker-1></required-log-markers>
+      <wave-follow-up>Verify schema matches migration 001_phase1.</wave-follow-up>
+      <phase-follow-up>Confirm Phase 2 prep columns are present.</phase-follow-up>
+    </V-M-MODELS-PLATFORM>
+
+    <V-M-REPO-OFFER MODULE="M-REPO-OFFER" PRIORITY="high">
+      <test-files><file>tests/repositories/test_offer_repo.py</file></test-files>
+      <module-checks><check-1>pytest tests/repositories/test_offer_repo.py -q</check-1></module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Offers sorted by price or delivery_date with deterministic secondary sort.</scenario-1>
+        <scenario-2 kind="success">Seller name is joined and returned with offer data.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[OfferRepo][list_for_product][BLOCK_LIST_FOR_PRODUCT]</marker-1></required-log-markers>
+      <wave-follow-up>Verify API responses use stable sorting.</wave-follow-up>
+      <phase-follow-up>Extend coverage for merchant-scoped queries.</phase-follow-up>
+    </V-M-REPO-OFFER>
+
+    <V-M-REPO-ADMIN MODULE="M-REPO-ADMIN" PRIORITY="high">
+      <test-files><file>tests/repositories/test_admin_catalog_repo.py</file></test-files>
+      <module-checks><check-1>pytest tests/repositories/test_admin_catalog_repo.py -q</check-1></module-checks>
+      <scenarios>
+        <scenario-1 kind="success">CRUD operations for products, sellers, offers work correctly.</scenario-1>
+        <scenario-2 kind="success">save_product_image_keys persists object keys without DB errors.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[AdminRepo][save_product_image_keys][BLOCK_SAVE_PRODUCT_IMAGE_KEYS]</marker-1></required-log-markers>
+      <wave-follow-up>Run admin API integration tests against repo layer.</wave-follow-up>
+      <phase-follow-up>Extend coverage when merchant scoping lands.</phase-follow-up>
+    </V-M-REPO-ADMIN>
+
+    <V-M-REPO-PRODUCT MODULE="M-REPO-PRODUCT" PRIORITY="high">
+      <test-files><file>tests/repositories/test_product_repo.py</file></test-files>
+      <module-checks><check-1>pytest tests/repositories/test_product_repo.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Cursor pagination returns stable next_cursor and nearest_delivery_date.</scenario-1><scenario-2 kind="failure">Repository avoids N+1 query growth past page 2.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[ProductRepo][list_paginated][BLOCK_LIST_PAGINATED]</marker-1></required-log-markers>
+      <wave-follow-up>Exercise public API and agent search endpoints against seeded data.</wave-follow-up>
+      <phase-follow-up>Add merchant scope assertions once Phase 2 starts.</phase-follow-up>
+    </V-M-REPO-PRODUCT>
+
+    <V-M-S3 MODULE="M-S3" PRIORITY="high">
+      <test-files><file>tests/services/test_s3_service.py</file></test-files>
+      <module-checks><check-1>pytest tests/services/test_s3_service.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Original and thumbnail uploads succeed and return presigned URLs.</scenario-1><scenario-2 kind="failure">Unsupported or broken images fail cleanly without partial DB writes.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[S3Service][upload_product_image][BLOCK_UPLOAD_THUMBNAIL_PAIR]</marker-1></required-log-markers>
+      <wave-follow-up>Run end-to-end upload through admin API against MinIO.</wave-follow-up>
+      <phase-follow-up>Review image size and format constraints.</phase-follow-up>
+    </V-M-S3>
+
+    <V-M-SVC-PRODUCT MODULE="M-SVC-PRODUCT" PRIORITY="high">
+      <test-files><file>tests/services/test_product_service.py</file></test-files>
+      <module-checks><check-1>pytest tests/services/test_product_service.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Public list and detail responses are shaped correctly.</scenario-1><scenario-2 kind="failure">Missing product id returns stable not-found handling.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[ProductService][list_products][BLOCK_BUILD_PUBLIC_PRODUCT_RESPONSE]</marker-1></required-log-markers>
+      <wave-follow-up>Verify API responses and frontend mappings stay aligned.</wave-follow-up>
+      <phase-follow-up>Confirm agent search reuses the same item projection.</phase-follow-up>
+    </V-M-SVC-PRODUCT>
+
+    <V-M-SVC-OFFER MODULE="M-SVC-OFFER" PRIORITY="high">
+      <test-files><file>tests/services/test_offer_service.py</file></test-files>
+      <module-checks><check-1>pytest tests/services/test_offer_service.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Offer sorting remains available as a dedicated async service entrypoint.</scenario-1><scenario-2 kind="failure">Sorting signals do not disappear from the service contract when repository behavior changes.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[OfferService][sort_offers][BLOCK_SORT_OFFERS]</marker-1></required-log-markers>
+      <wave-follow-up>Exercise price and delivery-date ordering through the public detail API.</wave-follow-up>
+      <phase-follow-up>Extend coverage when merchant-specific ranking rules are introduced.</phase-follow-up>
+    </V-M-SVC-OFFER>
+
+    <V-M-SVC-ADMIN MODULE="M-SVC-ADMIN" PRIORITY="high">
+      <test-files><file>tests/services/test_admin_catalog_service.py</file></test-files>
+      <module-checks><check-1>pytest tests/services/test_admin_catalog_service.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Image upload persists both object keys after successful storage writes.</scenario-1><scenario-2 kind="failure">DB update does not report success if storage upload fails.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[AdminService][upload_product_image][BLOCK_UPLOAD_AND_PERSIST_IMAGE]</marker-1></required-log-markers>
+      <wave-follow-up>Run admin API integration test with real MinIO.</wave-follow-up>
+      <phase-follow-up>Extend coverage when merchant scoping lands.</phase-follow-up>
+    </V-M-SVC-ADMIN>
+
+    <V-M-SVC-AGENT MODULE="M-SVC-AGENT" PRIORITY="high">
+      <test-files><file>tests/services/test_agent_service.py</file></test-files>
+      <module-checks><check-1>pytest tests/services/test_agent_service.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Price/name intent parsing yields expected structured filters.</scenario-1><scenario-2 kind="failure">Unparseable free text falls back safely without crashing.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[AgentService][search_products][BLOCK_PARSE_QUERY_INTENT]</marker-1></required-log-markers>
+      <wave-follow-up>Check X-Query-Interpreted header and agent_requests writes via API tests.</wave-follow-up>
+      <phase-follow-up>Deepen trace coverage when search sophistication increases.</phase-follow-up>
+    </V-M-SVC-AGENT>
+
+    <V-M-API-PUBLIC MODULE="M-API-PUBLIC" PRIORITY="high">
+      <test-files><file>tests/api/test_public_api.py</file></test-files>
+      <module-checks><check-1>pytest tests/api/test_public_api.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">List endpoint returns {items, next_cursor} and X-Total-Count header.</scenario-1><scenario-2 kind="failure">Detail endpoint handles missing products with stable error semantics.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[PublicApi][get_products][BLOCK_HANDLE_PUBLIC_PRODUCTS]</marker-1></required-log-markers>
+      <wave-follow-up>Run against seeded DB and exercise page 2 browse flow.</wave-follow-up>
+      <phase-follow-up>Sample logs to prove async-only request paths.</phase-follow-up>
+    </V-M-API-PUBLIC>
+
+    <V-M-API-ADMIN-AUTH MODULE="M-API-ADMIN-AUTH" PRIORITY="high">
+      <test-files><file>tests/api/test_admin_auth_api.py</file></test-files>
+      <module-checks><check-1>pytest tests/api/test_admin_auth_api.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Correct credentials return Bearer token with configured expiry.</scenario-1><scenario-2 kind="failure">Wrong credentials return 401.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[AdminAuthApi][login][BLOCK_HANDLE_LOGIN]</marker-1></required-log-markers>
+      <wave-follow-up>Verify frontend auth feature stores and reuses JWT.</wave-follow-up>
+      <phase-follow-up>Check future merchant claims do not break platform admin login.</phase-follow-up>
+    </V-M-API-ADMIN-AUTH>
+
+    <V-M-API-ADMIN-CATALOG MODULE="M-API-ADMIN-CATALOG" PRIORITY="high">
+      <test-files><file>tests/api/test_admin_catalog_api.py</file></test-files>
+      <module-checks><check-1>pytest tests/api/test_admin_catalog_api.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Protected routes require Bearer auth and image upload returns presigned URLs.</scenario-1><scenario-2 kind="failure">Unauthorized request is rejected without side effects.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[AdminCatalogApi][upload_image][BLOCK_HANDLE_IMAGE_UPLOAD]</marker-1></required-log-markers>
+      <wave-follow-up>Exercise end-to-end upload against live MinIO.</wave-follow-up>
+      <phase-follow-up>Add merchant authorization checks in Phase 2.</phase-follow-up>
+    </V-M-API-ADMIN-CATALOG>
+
+    <V-M-API-AGENT MODULE="M-API-AGENT" PRIORITY="high">
+      <test-files><file>tests/api/test_agent_api.py</file></test-files>
+      <module-checks><check-1>pytest tests/api/test_agent_api.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">llms.txt, /v1/agent/context, and /v1/agent/search all return the required payload shapes.</scenario-1><scenario-2 kind="failure">Malformed agent search input returns stable validation errors.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[AgentApi][search][BLOCK_HANDLE_AGENT_SEARCH]</marker-1></required-log-markers>
+      <wave-follow-up>Validate header contract including X-Query-Interpreted.</wave-follow-up>
+      <phase-follow-up>Review audit log density and redaction.</phase-follow-up>
+    </V-M-API-AGENT>
+
+    <V-M-SEED MODULE="M-SEED" PRIORITY="high">
+      <test-files><file>tests/test_seed.py</file></test-files>
+      <module-checks><check-1>pytest tests/test_seed.py -q</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Seed creates demo merchant and assigns every product to it.</scenario-1><scenario-2 kind="failure">Generated delivery_date values never exceed today + 6 days.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[Seed][run_seed][BLOCK_GENERATE_DELIVERY_DATES]</marker-1></required-log-markers>
+      <wave-follow-up>Re-run after schema changes that affect seed shape.</wave-follow-up>
+      <phase-follow-up>Keep counts and distributions aligned with requirements.</phase-follow-up>
+    </V-M-SEED>
+
+    <V-M-FE-TOOLING MODULE="M-FE-TOOLING" PRIORITY="high">
+      <test-files>
+        <file>../kodex-frontend/package.json</file>
+        <file>../kodex-frontend/vite.config.ts</file>
+        <file>../kodex-frontend/tsconfig.json</file>
+        <file>../kodex-frontend/eslint.config.js</file>
+        <file>../kodex-frontend/src/env.d.ts</file>
+      </test-files>
+      <module-checks>
+        <check-1>npm install</check-1>
+        <check-2>npm run type-check</check-2>
+        <check-3>npm run lint</check-3>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Vite alias, strict TypeScript, lint rules, env defaults, and Docker startup are configured coherently.</scenario-1>
+        <scenario-2 kind="failure">Lint or type-check fails fast when the alias map or FSD import rules are broken.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[FrontendTooling][setup][BLOCK_DEFINE_TOOLCHAIN]</marker-1></required-log-markers>
+      <wave-follow-up>Static tooling must pass before any later frontend wave is trusted.</wave-follow-up>
+      <phase-follow-up>Keep dependency versions aligned with technology.xml and build constraints.</phase-follow-up>
+    </V-M-FE-TOOLING>
+
+    <V-M-FE-SHARED-API MODULE="M-FE-SHARED-API" PRIORITY="high">
+      <test-files>
+        <file>../kodex-frontend/src/shared/api/client.test.ts</file>
+        <file>../kodex-frontend/src/shared/api/agentApi.test.ts</file>
+      </test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm run lint</check-2>
+        <check-3>npm exec vitest run src/shared/api</check-3>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The shared client applies base URL, timeout, and auth header injection correctly.</scenario-1>
+        <scenario-2 kind="failure">401 responses clear the stored token and redirect to /admin/login; non-401 responses do not redirect.</scenario-2>
+        <scenario-3 kind="success">Agent search returns typed product results and captures X-Query-Interpreted from headers.</scenario-3>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[FrontendShared][client][BLOCK_AUTH_INTERCEPTOR]</marker-1>
+        <marker-2>[FrontendShared][client][BLOCK_ERROR_INTERCEPTOR]</marker-2>
+      </required-log-markers>
+      <required-trace-assertions>
+        <assertion-1>No frontend module outside src/shared/api may instantiate axios or use raw fetch.</assertion-1>
+      </required-trace-assertions>
+      <wave-follow-up>Ensure later entity and page modules use only this shared API surface.</wave-follow-up>
+      <phase-follow-up>Recheck redirect semantics against the final router guards.</phase-follow-up>
+    </V-M-FE-SHARED-API>
+
+    <V-M-FE-SHARED-UI MODULE="M-FE-SHARED-UI" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/shared/ui/*.spec.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/shared/ui</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Button, Badge, and Spinner render with typed props and no embedded business logic.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[FrontendSharedUi][render][BLOCK_RENDER_SHARED_UI]</marker-1></required-log-markers>
+      <wave-follow-up>Verify widget consumers do not reimplement the same primitives.</wave-follow-up>
+      <phase-follow-up>Review accessibility semantics of the shared controls.</phase-follow-up>
+    </V-M-FE-SHARED-UI>
+
+    <V-M-FE-SHARED-LIB MODULE="M-FE-SHARED-LIB" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/shared/lib/*.test.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/shared/lib</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">formatPrice and formatDate return deterministic ru-RU-friendly strings for representative inputs.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[FrontendSharedLib][format][BLOCK_FORMAT_OUTPUT]</marker-1></required-log-markers>
+      <wave-follow-up>Verify widgets use only the shared formatter exports.</wave-follow-up>
+      <phase-follow-up>Keep locale assumptions explicit if other locales are added later.</phase-follow-up>
+    </V-M-FE-SHARED-LIB>
+
+    <V-M-FE-ENTITIES-PRODUCT MODULE="M-FE-ENTITIES-PRODUCT" PRIORITY="high">
+      <test-files>
+        <file>../kodex-frontend/src/entities/product/api/fetchProducts.test.ts</file>
+        <file>../kodex-frontend/src/entities/product/api/fetchProductById.test.ts</file>
+        <file>../kodex-frontend/src/entities/product/api/adminProductApi.test.ts</file>
+      </test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm run lint</check-2>
+        <check-3>npm exec vitest run src/entities/product</check-3>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Product list, detail, and admin DTOs are typed and match backend contract shapes.</scenario-1>
+        <scenario-2 kind="success">fetchProducts parses X-Total-Count and cursor values correctly.</scenario-2>
+        <scenario-3 kind="success">adminUploadImage sends multipart/form-data and returns typed image URLs.</scenario-3>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[ProductEntityApi][fetchProducts][BLOCK_REQUEST_PRODUCTS]</marker-1>
+        <marker-2>[ProductEntityApi][fetchProductById][BLOCK_REQUEST_PRODUCT_DETAIL]</marker-2>
+        <marker-3>[AdminProductApi][uploadImage][BLOCK_UPLOAD_IMAGE_FORM]</marker-3>
+      </required-log-markers>
+      <required-trace-assertions>
+        <assertion-1>Product entity files must not import offer or seller slices directly.</assertion-1>
+      </required-trace-assertions>
+      <wave-follow-up>Re-run against live seeded backend payloads.</wave-follow-up>
+      <phase-follow-up>Extend DTO coverage when merchant-specific fields are exposed.</phase-follow-up>
+    </V-M-FE-ENTITIES-PRODUCT>
+
+    <V-M-FE-ENTITIES-OFFER MODULE="M-FE-ENTITIES-OFFER" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/entities/offer/**/*.spec.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/entities/offer</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Offer and OfferSort exports remain stable for widget and feature consumers.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[OfferEntity][types][BLOCK_DEFINE_OFFER_TYPES]</marker-1></required-log-markers>
+      <wave-follow-up>Confirm modal sorting continues to use only these public exports.</wave-follow-up>
+      <phase-follow-up>Broaden offer shape checks if backend pricing contracts expand.</phase-follow-up>
+    </V-M-FE-ENTITIES-OFFER>
+
+    <V-M-FE-ENTITIES-SELLER MODULE="M-FE-ENTITIES-SELLER" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/entities/seller/**/*.spec.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/entities/seller</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Seller exports remain pure typed contracts with no shared API coupling.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[SellerEntity][types][BLOCK_DEFINE_SELLER_TYPES]</marker-1></required-log-markers>
+      <wave-follow-up>Verify offers and admin tables consume only the public seller exports.</wave-follow-up>
+      <phase-follow-up>Extend seller typing if ownership or rating semantics change.</phase-follow-up>
+    </V-M-FE-ENTITIES-SELLER>
+
+    <V-M-FE-FEATURE-SCROLL MODULE="M-FE-FEATURE-SCROLL" PRIORITY="high">
+      <test-files><file>../kodex-frontend/src/features/infinite-scroll/useInfiniteScroll.test.ts</file></test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm exec vitest run src/features/infinite-scroll</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">The first page loads on mount and subsequent pages load only when the sentinel intersects.</scenario-1>
+        <scenario-2 kind="failure">Concurrent load attempts are suppressed while a request is already in flight.</scenario-2>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[InfiniteScroll][loadPage][BLOCK_LOAD_PAGE]</marker-1>
+        <marker-2>[InfiniteScroll][observer][BLOCK_OBSERVER_SETUP]</marker-2>
+      </required-log-markers>
+      <required-trace-assertions>
+        <assertion-1>BLOCK_LOAD_PAGE must not re-enter while isLoading is true.</assertion-1>
+      </required-trace-assertions>
+      <wave-follow-up>Verify CatalogPage uses reset() only after agent search results are returned.</wave-follow-up>
+      <phase-follow-up>Run live page smoke checks against the catalog endpoint.</phase-follow-up>
+    </V-M-FE-FEATURE-SCROLL>
+
+    <V-M-FE-FEATURE-SORT MODULE="M-FE-FEATURE-SORT" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/features/product-sort/*.test.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/features/product-sort</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Sort state toggles deterministically between price and delivery_date and SortButtons emit the public values.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[ProductSort][state][BLOCK_SET_SORT]</marker-1></required-log-markers>
+      <wave-follow-up>Confirm ProductModal re-fetches when this feature emits a new value.</wave-follow-up>
+      <phase-follow-up>Keep sort key surface aligned with backend offers_sort support.</phase-follow-up>
+    </V-M-FE-FEATURE-SORT>
+
+    <V-M-FE-FEATURE-AUTH MODULE="M-FE-FEATURE-AUTH" PRIORITY="high">
+      <test-files><file>../kodex-frontend/src/features/admin-auth/useAdminAuth.test.ts</file></test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm exec vitest run src/features/admin-auth</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Successful login stores the token and redirects to /admin.</scenario-1>
+        <scenario-2 kind="failure">Failed login leaves the token empty and exposes the stable error message.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[AdminAuthFeature][login][BLOCK_SUBMIT_LOGIN]</marker-1></required-log-markers>
+      <wave-follow-up>Verify page-level admin guards and shared client interceptors are consistent with this feature.</wave-follow-up>
+      <phase-follow-up>Audit token handling and logout behavior against the final router flow.</phase-follow-up>
+    </V-M-FE-FEATURE-AUTH>
+
+    <V-M-FE-FEATURE-VOICE MODULE="M-FE-FEATURE-VOICE" PRIORITY="high">
+      <test-files><file>../kodex-frontend/src/features/voice-search/useVoiceSearch.test.ts</file></test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm exec vitest run src/features/voice-search</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">VoiceSearchButton stays hidden when SpeechRecognition is unavailable.</scenario-1>
+        <scenario-2 kind="success">Text-based agent search still works when voice support is absent.</scenario-2>
+        <scenario-3 kind="failure">Recognition errors stop listening without surfacing user-facing exceptions.</scenario-3>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[VoiceSearch][support][BLOCK_SUPPORT_CHECK]</marker-1>
+        <marker-2>[VoiceSearch][recognition][BLOCK_RECOGNITION_SETUP]</marker-2>
+        <marker-3>[VoiceSearch][agentSearch][BLOCK_AGENT_SEARCH]</marker-3>
+      </required-log-markers>
+      <required-trace-assertions>
+        <assertion-1>BLOCK_AGENT_SEARCH may execute without BLOCK_RECOGNITION_SETUP when Enter-triggered text search is used.</assertion-1>
+      </required-trace-assertions>
+      <wave-follow-up>Connect voice feature to CatalogPage and live agent endpoint doubles.</wave-follow-up>
+      <phase-follow-up>Run one smoke check in a browser with and without speech support.</phase-follow-up>
+    </V-M-FE-FEATURE-VOICE>
+
+    <V-M-FE-WIDGET-CARD MODULE="M-FE-WIDGET-CARD" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/widgets/product-card/ProductCard.spec.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/widgets/product-card</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">ProductCard renders pricing, stock, and nearest delivery and emits the selected id on click.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[ProductCard][render][BLOCK_RENDER_CARD]</marker-1></required-log-markers>
+      <wave-follow-up>Verify CatalogPage uses only the public widget export.</wave-follow-up>
+      <phase-follow-up>Review responsive behavior inside the catalog grid.</phase-follow-up>
+    </V-M-FE-WIDGET-CARD>
+
+    <V-M-FE-WIDGET-MODAL MODULE="M-FE-WIDGET-MODAL" PRIORITY="high">
+      <test-files><file>../kodex-frontend/src/widgets/product-modal/ProductModal.spec.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/widgets/product-modal</check-1></module-checks>
+      <scenarios>
+        <scenario-1 kind="success">ProductModal fetches details when productId is set and re-fetches on sort changes.</scenario-1>
+        <scenario-2 kind="failure">No detail request is sent when productId is null.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[ProductModal][watchProductId][BLOCK_FETCH_ON_ID_CHANGE]</marker-1></required-log-markers>
+      <required-trace-assertions><assertion-1>BLOCK_FETCH_ON_ID_CHANGE must short-circuit when productId is null.</assertion-1></required-trace-assertions>
+      <wave-follow-up>Exercise modal sorting against live offers_sort backend behavior.</wave-follow-up>
+      <phase-follow-up>Review focus trap and close behavior when integrated into the page.</phase-follow-up>
+    </V-M-FE-WIDGET-MODAL>
+
+    <V-M-FE-WIDGET-TABLE MODULE="M-FE-WIDGET-TABLE" PRIORITY="medium">
+      <test-files><file>../kodex-frontend/src/widgets/products-table/ProductsTable.spec.ts</file></test-files>
+      <module-checks><check-1>npm exec vitest run src/widgets/products-table</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">ProductsTable emits edit, delete, and uploadImage actions with the correct product id.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[ProductsTable][actions][BLOCK_TABLE_ACTIONS]</marker-1></required-log-markers>
+      <wave-follow-up>Verify AdminPage wires these emits to the proper entity API calls.</wave-follow-up>
+      <phase-follow-up>Review table interaction states with real admin data.</phase-follow-up>
+    </V-M-FE-WIDGET-TABLE>
+
+    <V-M-FE-PAGE-CATALOG MODULE="M-FE-PAGE-CATALOG" PRIORITY="high">
+      <test-files>
+        <file>../kodex-frontend/src/pages/catalog/CatalogPage.spec.ts</file>
+        <file>../kodex-frontend/src/pages/product/ProductPage.spec.ts</file>
+      </test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm exec vitest run src/pages/catalog src/pages/product</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">CatalogPage wires infinite scroll, modal selection, and agent search reset behavior correctly.</scenario-1>
+        <scenario-2 kind="success">Agent search on Enter replaces the grid with returned ProductListItem values and shows interpreted intent when present.</scenario-2>
+      </scenarios>
+      <required-log-markers><marker-1>[CatalogPage][agentSearch][BLOCK_AGENT_SEARCH_HANDLER]</marker-1></required-log-markers>
+      <required-trace-assertions><assertion-1>CatalogPage reset() must receive only ProductListItem arrays returned from public feature/entity APIs.</assertion-1></required-trace-assertions>
+      <wave-follow-up>Run live smoke checks against catalog and agent backend endpoints.</wave-follow-up>
+      <phase-follow-up>Keep the thin ProductPage fallback aligned with modal data needs if it stays in the route tree.</phase-follow-up>
+    </V-M-FE-PAGE-CATALOG>
+
+    <V-M-FE-PAGE-ADMIN MODULE="M-FE-PAGE-ADMIN" PRIORITY="high">
+      <test-files>
+        <file>../kodex-frontend/src/pages/admin/LoginPage.spec.ts</file>
+        <file>../kodex-frontend/src/pages/admin/AdminPage.spec.ts</file>
+      </test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm exec vitest run src/pages/admin</check-2>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">LoginPage submits credentials through useAdminAuth and shows stable failures.</scenario-1>
+        <scenario-2 kind="success">AdminPage redirects unauthenticated users and loads products when a token is present.</scenario-2>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[LoginPage][submit][BLOCK_SUBMIT_LOGIN]</marker-1>
+        <marker-2>[AdminPage][loadProducts][BLOCK_LOAD_PRODUCTS]</marker-2>
+      </required-log-markers>
+      <required-trace-assertions><assertion-1>AdminPage must not call admin endpoints before auth state or route guard validation.</assertion-1></required-trace-assertions>
+      <wave-follow-up>Exercise admin flows against auth and catalog backend doubles, then live endpoints.</wave-follow-up>
+      <phase-follow-up>Review CRUD and image upload UI states with the final admin API surface.</phase-follow-up>
+    </V-M-FE-PAGE-ADMIN>
+
+    <V-M-FE-APP MODULE="M-FE-APP" PRIORITY="high">
+      <test-files>
+        <file>../kodex-frontend/src/main.ts</file>
+        <file>../kodex-frontend/src/app/router.spec.ts</file>
+        <file>../kodex-frontend/src/app/App.spec.ts</file>
+      </test-files>
+      <module-checks>
+        <check-1>npm run type-check</check-1>
+        <check-2>npm run build</check-2>
+        <check-3>npm exec vitest run src/app</check-3>
+      </module-checks>
+      <scenarios>
+        <scenario-1 kind="success">Vue bootstrap registers router and Pinia without cross-layer leaks.</scenario-1>
+        <scenario-2 kind="success">Route guards redirect unauthenticated admin access to /admin/login before page loading occurs.</scenario-2>
+      </scenarios>
+      <required-log-markers>
+        <marker-1>[FrontendApp][bootstrap][BLOCK_BOOTSTRAP_APP]</marker-1>
+        <marker-2>[FrontendApp][router][BLOCK_ROUTE_GUARDS]</marker-2>
+      </required-log-markers>
+      <required-trace-assertions><assertion-1>BLOCK_ROUTE_GUARDS must redirect before AdminPage data loading when the token is missing.</assertion-1></required-trace-assertions>
+      <wave-follow-up>Smoke-test browser startup against the Compose backend proxy on port 5173.</wave-follow-up>
+      <phase-follow-up>Confirm build output and base-route assumptions before marking Phase 1b complete.</phase-follow-up>
+    </V-M-FE-APP>
+
+    <V-M-RBAC MODULE="M-RBAC" PRIORITY="medium">
+      <test-files><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: RBAC remains claim-based and merchant-scoped before implementation begins.</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Merchant claims allow only same-merchant access.</scenario-1><scenario-2 kind="failure">Missing merchant_id denies merchant-admin requests.</scenario-2></scenarios>
+      <required-log-markers><marker-1>[RBAC][require_role][BLOCK_CHECK_ROLE_SCOPE]</marker-1></required-log-markers>
+      <wave-follow-up>Add executable tests when app/core/rbac.py exists.</wave-follow-up>
+      <phase-follow-up>Expand roles for support and operations actors once runtime code lands.</phase-follow-up>
+    </V-M-RBAC>
+
+    <V-M-MERCHANT MODULE="M-MERCHANT" PRIORITY="medium">
+      <test-files><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: merchant portal remains scoped through merchant_id and RBAC.</check-1></module-checks>
+      <scenarios><scenario-1 kind="success">Merchant admin sees only own products.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[MerchantPortal][scope][BLOCK_ENFORCE_MERCHANT_SCOPE]</marker-1></required-log-markers>
+      <wave-follow-up>Add executable tests when app/services/merchant_portal_service.py exists.</wave-follow-up>
+      <phase-follow-up>Pen-test cross-merchant access paths once runtime code lands.</phase-follow-up>
+    </V-M-MERCHANT>
+
+    <V-M-SEARCH MODULE="M-SEARCH" PRIORITY="medium">
+      <test-files><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: future search module stays compatible with current product schema and interpreted intent flow.</check-1></module-checks>
+      <scenarios><scenario-1 kind="future">Advanced search extends the current interpreted filters without breaking Phase 1 contracts.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[SearchService][run_search][BLOCK_RUN_SEARCH]</marker-1></required-log-markers>
+      <wave-follow-up>Add executable tests when app/services/search_service.py exists.</wave-follow-up>
+      <phase-follow-up>Promote to runtime verification before Phase 2 search work is marked complete.</phase-follow-up>
+    </V-M-SEARCH>
+
+    <V-M-RECOMMENDATIONS MODULE="M-RECOMMENDATIONS" PRIORITY="medium">
+      <test-files><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: recommendation integration remains optional and feature-flagged.</check-1></module-checks>
+      <scenarios><scenario-1 kind="future">Recommendation features stay isolated behind config flags and do not become a Phase 1 runtime dependency.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[RecommendationsService][get_recommendations][BLOCK_GET_RECOMMENDATIONS]</marker-1></required-log-markers>
+      <wave-follow-up>Add executable tests when app/services/recommendations_service.py exists.</wave-follow-up>
+      <phase-follow-up>Promote to runtime verification before recommendation work is marked complete.</phase-follow-up>
+    </V-M-RECOMMENDATIONS>
+
+    <V-M-ORDERS MODULE="M-ORDERS" PRIORITY="medium">
+      <test-files><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: future order flow preserves Phase 1 catalog and merchant contracts.</check-1></module-checks>
+      <scenarios><scenario-1 kind="future">Order lifecycle work layers on top of the prepared schema instead of forcing a structural rewrite.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[OrdersDomain][create_order][BLOCK_CREATE_ORDER]</marker-1></required-log-markers>
+      <wave-follow-up>Add executable tests when app/services/orders_service.py exists.</wave-follow-up>
+      <phase-follow-up>Promote to runtime verification before order work is marked complete.</phase-follow-up>
+    </V-M-ORDERS>
+
+    <V-M-AGENT-AUDIT MODULE="M-AGENT-AUDIT" PRIORITY="medium">
+      <test-files><file>docs/development-plan.xml</file><file>docs/knowledge-graph.xml</file></test-files>
+      <module-checks><check-1>Manual review: richer agent audit work remains layered on the existing agent_requests table.</check-1></module-checks>
+      <scenarios><scenario-1 kind="future">Enhanced agent audit features extend the prepared schema without breaking Phase 1 agent search logging.</scenario-1></scenarios>
+      <required-log-markers><marker-1>[AgentAudit][record_agent_event][BLOCK_RECORD_AGENT_EVENT]</marker-1></required-log-markers>
+      <wave-follow-up>Add executable tests when app/services/agent_audit_service.py exists.</wave-follow-up>
+      <phase-follow-up>Promote to runtime verification before Phase 2 audit work is marked complete.</phase-follow-up>
+    </V-M-AGENT-AUDIT>
+  </ModuleVerification>
+  <!-- END_BLOCK_MODULE_VERIFICATION -->
+
+  <!-- START_BLOCK_PHASE_GATES -->
+  <PhaseGates>
+    <Gate-Phase-0 PHASE="Phase-0">
+      <goal>Bootstrap artifacts exist and the project can move into implementation with a stable plan.</goal>
+      <commands><command-1>Manual artifact review</command-1></commands>
+      <required-evidence><evidence-1>AGENTS.md, GRACE XML docs, docker-compose.yml, .env.example, and docs/ai files are present.</evidence-1></required-evidence>
+    </Gate-Phase-0>
+
+    <Gate-Phase-1 PHASE="Phase-1">
+      <goal>Backend prototype satisfies async runtime, schema foresight, and public/admin/agent API correctness.</goal>
+      <commands><command-1>pytest -q</command-1><command-2>alembic upgrade head</command-2></commands>
+      <required-evidence>
+        <evidence-1>All critical backend checklist items pass, including async-only handlers and required schema columns.</evidence-1>
+        <evidence-2>Seed and agent search flows produce the expected evidence markers.</evidence-2>
+      </required-evidence>
+    </Gate-Phase-1>
+
+    <Gate-Phase-1b PHASE="Phase-1b">
+      <goal>Frontend FSD layers, infinite scroll, modal sorting, agent bar, and admin auth work against the backend.</goal>
+      <commands>
+        <command-1>npm run type-check</command-1>
+        <command-2>npm run lint</command-2>
+        <command-3>npm run build</command-3>
+        <command-4>npm exec vitest run</command-4>
+      </commands>
+      <required-evidence>
+        <evidence-1>No cross-slice internal imports exist.</evidence-1>
+        <evidence-2>No raw axios or fetch calls exist outside src/shared/api/client.ts and its public wrappers.</evidence-2>
+        <evidence-3>Frontend checklist items pass against live backend data or stable API doubles where the backend surface is not yet merged.</evidence-3>
+        <evidence-4>Catalog browse, ProductModal sort re-fetch, voice fallback, agent Enter search, and admin login redirect each have deterministic module-level evidence plus one page-level smoke path.</evidence-4>
+      </required-evidence>
+    </Gate-Phase-1b>
+
+    <Gate-Phase-2 PHASE="Phase-2">
+      <goal>Merchant isolation, extended agent audit, search, and optional recommendations expand without breaking Phase 1 contracts.</goal>
+      <commands><command-1>pytest -q</command-1><command-2>vitest run</command-2></commands>
+      <required-evidence><evidence-1>Cross-merchant access is denied and future modules use the prepared schema instead of requiring structural rework.</evidence-1></required-evidence>
+    </Gate-Phase-2>
+  </PhaseGates>
+  <!-- END_BLOCK_PHASE_GATES -->
+
+  <!-- START_BLOCK_FAILURE_PACKETS -->
+  <FailurePackets>
+    <packet-template>
+      <expected-fields>scenario, expected-evidence, observed-evidence, first-divergent-block, next-action</expected-fields>
+    </packet-template>
+  </FailurePackets>
+  <!-- END_BLOCK_FAILURE_PACKETS -->
+</VerificationPlan>

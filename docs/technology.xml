@@ -1,0 +1,115 @@
+<TechnologyStack VERSION="0.2.0">
+  <!--
+  START_MODULE_CONTRACT
+  PURPOSE: Record the Kodex stack decisions, version boundaries, testing strategy, and observability contract.
+  SCOPE: Backend, frontend, and infrastructure technologies that Phase 1 and Phase 2 planning depend on.
+  DEPENDS: /Users/myevdokimov/prj/kodex/kodex-backend/docs/requirements.xml
+  LINKS: M-CONFIG, M-DB, M-S3, M-FE-APP, M-INFRA-COMPOSE
+  END_MODULE_CONTRACT
+  START_MODULE_MAP
+  runtime-language-framework - Canonical runtime and framework baseline
+  dependencies - Core libraries and infrastructure services with locked version ranges
+  version-constraints - Guardrails that keep generated code on the right API surfaces
+  tooling - Workspace, build, lint, and test tools
+  testing - Module, wave, and phase verification strategy
+  observability - Logging format, required fields, and redaction policy
+  delivery-shape - Deployment topology for local development and early phases
+  END_MODULE_MAP
+  -->
+  <!-- START_BLOCK_RUNTIME -->
+  <Runtime>Python backend runtime 3.12 / Node.js frontend toolchain 20.x LTS</Runtime>
+  <Language>Python 3.12 / TypeScript 5.x</Language>
+  <Framework>FastAPI 0.115.x / Vue 3.5.x</Framework>
+  <!-- END_BLOCK_RUNTIME -->
+
+  <!-- START_BLOCK_DEPENDENCIES -->
+  <Dependencies>
+    <dep name="fastapi" version="0.115.x" purpose="Async HTTP API framework for public, admin, and agent endpoints." />
+    <dep name="sqlalchemy" version="2.x" purpose="Async ORM and query construction for PostgreSQL access." />
+    <dep name="asyncpg" version="runtime-only" purpose="Required PostgreSQL driver for async SQLAlchemy connections." />
+    <dep name="alembic" version="1.14.x" purpose="Schema migrations executed only through the sync CLI." />
+    <dep name="postgresql" version="16" purpose="Primary relational database for catalog, merchant prep, and audit records." />
+    <dep name="minio" version="latest" purpose="Local S3-compatible object storage for product images and thumbnails." />
+    <dep name="aioboto3" version="13.x" purpose="Async S3 client for MinIO integration and presigned URLs." />
+    <dep name="pydantic" version="2.x" purpose="Settings and request/response validation." />
+    <dep name="python-jose" version="3.x" purpose="JWT encoding and decoding for admin and future merchant auth." />
+    <dep name="passlib[bcrypt]" version="1.7.x" purpose="Password verification for platform admin authentication." />
+    <dep name="Pillow" version="10.x" purpose="Thumbnail generation during image upload." />
+    <dep name="Faker" version="24.x" purpose="Realistic seed data generation for products, attributes, sellers, and offers." />
+    <dep name="vue" version="3.5.x" purpose="Frontend UI framework for catalog, modal, admin, and agent surfaces." />
+    <dep name="typescript" version="5.x" purpose="Typed frontend implementation and API contracts." />
+    <dep name="vite" version="6.x" purpose="Frontend dev server and build pipeline." />
+    <dep name="vue-router" version="4.x" purpose="Client-side routing for public and admin pages." />
+    <dep name="pinia" version="2.x" purpose="Client-side state management for auth, catalog, and agent state." />
+    <dep name="axios" version="1.x" purpose="HTTP client for backend communication from the frontend." />
+    <dep name="docker-compose" version="v2" purpose="Local orchestration for PostgreSQL, MinIO, backend, and frontend services." />
+    <dep name="pytest" version="8.x-planned" purpose="Planned backend test runner for async service and API verification." />
+    <dep name="pytest-asyncio" version="0.24.x-planned" purpose="Planned async backend test support." />
+    <dep name="httpx" version="0.28.x-planned" purpose="Planned async API client for FastAPI endpoint verification." />
+    <dep name="vitest" version="2.x-planned" purpose="Planned frontend test runner for FSD slices and widgets." />
+    <dep name="@vue/test-utils" version="2.x-planned" purpose="Planned Vue component testing utilities." />
+  </Dependencies>
+  <!-- END_BLOCK_DEPENDENCIES -->
+
+  <!-- START_BLOCK_VERSION_CONSTRAINTS -->
+  <VersionConstraints>
+    <constraint lib="fastapi" min="0.115.0" max="0.115.x" reason="Keep handler and dependency APIs aligned with the requested surface." />
+    <constraint lib="sqlalchemy" min="2.0.0" max="2.x" reason="Async session usage and query APIs must match SQLAlchemy 2.x." />
+    <constraint lib="asyncpg" min="0.0.0" max="any" reason="Async PostgreSQL access is allowed only through asyncpg; psycopg2 is forbidden in runtime code." />
+    <constraint lib="alembic" min="1.14.0" max="1.14.x" reason="Migration scripts target the 1.14 CLI behavior only." />
+    <constraint lib="aioboto3" min="13.0.0" max="13.x" reason="Handlers must use async S3 calls; sync boto3 in request paths is forbidden." />
+    <constraint lib="vue" min="3.5.0" max="3.5.x" reason="Frontend composition API and FSD implementation assume Vue 3.5 behavior." />
+    <constraint lib="vite" min="6.0.0" max="6.x" reason="Frontend local development and Docker command are defined against Vite 6." />
+    <constraint lib="fsd" min="public-api-only" max="public-api-only" reason="Cross-slice imports are forbidden; all inter-slice access must go through index.ts." />
+  </VersionConstraints>
+  <!-- END_BLOCK_VERSION_CONSTRAINTS -->
+
+  <!-- START_BLOCK_TOOLING -->
+  <Tooling>
+    <tool name="workspace-shape" value="polyrepo" version="Phase 0" />
+    <tool name="backend-runtime" value="python" version="3.12" />
+    <tool name="frontend-runtime" value="node" version="20.x LTS (assumed)" />
+    <tool name="bundler" value="vite" version="6.x" />
+    <tool name="router" value="vue-router" version="4.x" />
+    <tool name="state-store" value="pinia" version="2.x" />
+    <tool name="container-orchestration" value="docker compose" version="v2" />
+    <tool name="test-runner-backend" value="pytest" version="8.x-planned" />
+    <tool name="test-runner-frontend" value="vitest" version="2.x-planned" />
+  </Tooling>
+  <!-- END_BLOCK_TOOLING -->
+
+  <!-- START_BLOCK_TESTING -->
+  <Testing>
+    <module-level>
+      <command>pytest tests/unit -q &amp;&amp; vitest run --dir src</command>
+      <focus>Fast deterministic checks around repositories, services, parsers, and isolated frontend slices.</focus>
+    </module-level>
+    <wave-level>
+      <command>pytest tests/integration -q &amp;&amp; vitest run src/widgets src/pages</command>
+      <focus>Validate only the merged API surfaces, data flows, and frontend widgets touched by the current wave.</focus>
+    </wave-level>
+    <phase-level>
+      <command>pytest -q &amp;&amp; vitest run &amp;&amp; docker compose up --build</command>
+      <focus>Broader integration and regression confidence across infra, backend, frontend, and agent discovery surfaces.</focus>
+    </phase-level>
+    <mocking-policy>Prefer Faker-backed fixtures, HTTPX async clients, aioboto3 stubs, and narrow Vue component doubles over broad monkey-patching.</mocking-policy>
+  </Testing>
+  <!-- END_BLOCK_TESTING -->
+
+  <!-- START_BLOCK_OBSERVABILITY -->
+  <Observability>
+    <logger>Python logging with stable structured fields, Uvicorn access logs, and frontend diagnostics aligned to the same block-anchor convention.</logger>
+    <log-format>[Module][function][BLOCK_NAME] message</log-format>
+    <required-fields>correlationId, requestId, actorType, actorId, merchantId, endpoint, module, block</required-fields>
+    <redaction>Never log secrets, credentials, JWTs, presigned URLs with secrets, or raw high-risk payloads.</redaction>
+  </Observability>
+  <!-- END_BLOCK_OBSERVABILITY -->
+
+  <!-- START_BLOCK_DELIVERY_SHAPE -->
+  <DeliveryShape>
+    <shape>Local Docker Compose stack with PostgreSQL 16, MinIO, FastAPI backend on port 8000, and Vite frontend on port 5173 using bind mounts for hot reload.</shape>
+    <shape>Backend owns shared GRACE artifacts in kodex-backend/docs while frontend and infra keep repo-local AI workflow logs.</shape>
+    <shape>Phase 1 ships a graded prototype while preserving schema and module seams for Phase 2 merchant, RBAC, search, and agent-audit expansion.</shape>
+  </DeliveryShape>
+  <!-- END_BLOCK_DELIVERY_SHAPE -->
+</TechnologyStack>

@@ -1,0 +1,532 @@
+<KnowledgeGraph>
+  <Project NAME="Kodex" VERSION="0.4.0">
+    <!--
+    START_MODULE_CONTRACT
+    PURPOSE: Maintain a navigable cross-repo graph of planned Kodex modules, exports, dependencies, and verification refs.
+    SCOPE: Phase 0 bootstrap modules, Phase 1 implementation modules, frontend FSD layers, and Phase 2 future stubs.
+    DEPENDS: /Users/myevdokimov/prj/kodex/kodex-backend/docs/development-plan.xml, /Users/myevdokimov/prj/kodex/kodex-backend/docs/verification-plan.xml
+    LINKS: M-GOVERNANCE, M-CONFIG, M-DB, M-S3, M-FE-APP, M-MERCHANT
+    END_MODULE_CONTRACT
+    START_MODULE_MAP
+    keywords - Domain activation surface for future agents
+    annotation - High-level project identity
+    modules - Unique module nodes with paths, dependencies, and verification refs
+    crosslinks - Bidirectional dependency edges between important modules
+    END_MODULE_MAP
+    -->
+    <keywords>marketplace, fastapi, vue3, postgresql, minio, async, fsd, docker-compose, agentic-commerce, multi-merchant, rbac, llms-txt, ai-only-dev, grace</keywords>
+    <annotation>Multi-merchant marketplace platform with Agentic Commerce layer. Phase 1 = prototype (ТЗ). Built AI-only via GRACE methodology.</annotation>
+
+    <!-- START_BLOCK_MODULES -->
+    <M-GOVERNANCE NAME="GovernanceDocs" TYPE="UTILITY" STATUS="phase0-complete">
+      <purpose>Project-wide GRACE constitution and planning artifact ownership.</purpose>
+      <path>AGENTS.md</path>
+      <depends>none</depends>
+      <verification-ref>V-M-GOVERNANCE</verification-ref>
+      <annotations><export-engineering-protocol PURPOSE="Defines Kodex engineering protocol." /></annotations>
+    </M-GOVERNANCE>
+
+    <M-INFRA-ENV NAME="InfraEnv" TYPE="UTILITY" STATUS="phase0-complete">
+      <purpose>Environment contract for database, storage, auth, and feature flags.</purpose>
+      <path>../kodex-infra/.env.example</path>
+      <depends>M-GOVERNANCE</depends>
+      <verification-ref>V-M-INFRA-ENV</verification-ref>
+      <annotations><export-env-template PURPOSE="Canonical environment template." /></annotations>
+    </M-INFRA-ENV>
+
+    <M-INFRA-COMPOSE NAME="InfraCompose" TYPE="INTEGRATION" STATUS="phase0-complete">
+      <purpose>Local Docker Compose topology for PostgreSQL, MinIO, backend, and frontend.</purpose>
+      <path>../kodex-infra/docker-compose.yml</path>
+      <depends>M-INFRA-ENV</depends>
+      <verification-ref>V-M-INFRA-COMPOSE</verification-ref>
+      <annotations><export-compose-stack PURPOSE="Local runtime topology." /></annotations>
+    </M-INFRA-COMPOSE>
+
+    <M-CONFIG NAME="Config" TYPE="UTILITY" STATUS="phase1-complete">
+      <purpose>Backend runtime settings loaded from environment variables.</purpose>
+      <path>app/core/config.py</path>
+      <depends>M-INFRA-ENV</depends>
+      <verification-ref>V-M-CONFIG</verification-ref>
+      <annotations><fn-get_settings PURPOSE="Load validated backend settings." /><type-BackendSettings PURPOSE="Typed settings object." /></annotations>
+    </M-CONFIG>
+
+    <M-DB NAME="Database" TYPE="UTILITY" STATUS="phase1-complete">
+      <purpose>Async SQLAlchemy engine and session factory.</purpose>
+      <path>app/core/database.py</path>
+      <depends>M-CONFIG, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <verification-ref>V-M-DB</verification-ref>
+      <annotations><fn-get_session PURPOSE="Yield AsyncSession for request and task scopes." /></annotations>
+    </M-DB>
+
+    <M-AUTH NAME="Auth" TYPE="UTILITY" STATUS="phase1-complete">
+      <purpose>Admin authentication, JWT issuing, and future-ready claim parsing.</purpose>
+      <path>app/core/auth.py</path>
+      <depends>M-CONFIG</depends>
+      <verification-ref>V-M-AUTH</verification-ref>
+      <annotations><fn-login_admin PURPOSE="Validate admin credentials and issue JWT." /></annotations>
+    </M-AUTH>
+
+    <M-MODELS-CATALOG NAME="CatalogModels" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>ORM models for products, sellers, offers, and attributes.</purpose>
+      <path>app/models/catalog.py</path>
+      <depends>M-DB</depends>
+      <verification-ref>V-M-MODELS-CATALOG</verification-ref>
+      <annotations><type-Product PURPOSE="Catalog product with merchant and search prep fields." /><type-Offer PURPOSE="Merchant offer with price and delivery date." /></annotations>
+    </M-MODELS-CATALOG>
+
+    <M-MODELS-PLATFORM NAME="PlatformModels" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>ORM models for merchants and agent request audit records.</purpose>
+      <path>app/models/platform.py</path>
+      <depends>M-DB</depends>
+      <verification-ref>V-M-MODELS-PLATFORM</verification-ref>
+      <annotations><type-Merchant PURPOSE="Merchant ownership boundary for Phase 2." /><type-AgentRequest PURPOSE="Agent search audit record." /></annotations>
+    </M-MODELS-PLATFORM>
+
+    <M-MIGRATIONS NAME="Migrations" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Phase 1 schema migrations including PHASE_2_PREP columns and indexes.</purpose>
+      <path>alembic/versions/*.py</path>
+      <depends>M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <verification-ref>V-M-MIGRATIONS</verification-ref>
+      <annotations><export-upgrade-head PURPOSE="Apply Phase 1 schema through Alembic CLI." /></annotations>
+    </M-MIGRATIONS>
+
+    <M-REPO-PRODUCT NAME="ProductRepository" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Cursor-paginated product listing and detail query layer.</purpose>
+      <path>app/repositories/product_repo.py</path>
+      <depends>M-DB, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <verification-ref>V-M-REPO-PRODUCT</verification-ref>
+      <annotations><fn-list_paginated PURPOSE="List products with nearest delivery date." /><fn-get_detail PURPOSE="Load detailed product projection." /></annotations>
+    </M-REPO-PRODUCT>
+
+    <M-REPO-OFFER NAME="OfferRepository" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Offer read access with stable sorting options.</purpose>
+      <path>app/repositories/offer_repo.py</path>
+      <depends>M-DB, M-MODELS-CATALOG</depends>
+      <verification-ref>V-M-REPO-OFFER</verification-ref>
+      <annotations><fn-list_for_product PURPOSE="Return offers for one product." /></annotations>
+    </M-REPO-OFFER>
+
+    <M-REPO-ADMIN NAME="AdminCatalogRepository" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Admin persistence surface for catalog mutations and media object keys.</purpose>
+      <path>app/repositories/admin_catalog_repo.py</path>
+      <depends>M-DB, M-MODELS-CATALOG</depends>
+      <verification-ref>V-M-REPO-ADMIN</verification-ref>
+      <annotations><fn-save_product_image_keys PURPOSE="Persist image and thumbnail object keys." /></annotations>
+    </M-REPO-ADMIN>
+
+    <M-S3 NAME="S3Service" TYPE="INTEGRATION" STATUS="phase1-complete">
+      <purpose>Async MinIO upload and thumbnail generation service.</purpose>
+      <path>app/services/s3_service.py</path>
+      <depends>M-CONFIG</depends>
+      <verification-ref>V-M-S3</verification-ref>
+      <annotations><fn-upload_product_image PURPOSE="Store original and thumbnail assets." /><type-StoredImageRefs PURPOSE="Object keys and presigned URL pair." /></annotations>
+    </M-S3>
+
+    <M-SVC-PRODUCT NAME="ProductService" TYPE="CORE_LOGIC" STATUS="phase1-complete">
+      <purpose>Public catalog and product detail response assembly.</purpose>
+      <path>app/services/product_service.py</path>
+      <depends>M-REPO-PRODUCT, M-REPO-OFFER, M-SCHEMAS-PRODUCT, M-CONFIG</depends>
+      <verification-ref>V-M-SVC-PRODUCT</verification-ref>
+      <annotations><fn-list_products PURPOSE="Build public list response." /><fn-get_product_detail PURPOSE="Build detail payload." /></annotations>
+    </M-SVC-PRODUCT>
+
+    <M-SVC-OFFER NAME="OfferService" TYPE="CORE_LOGIC" STATUS="phase1-complete">
+      <purpose>Offer sorting and response shaping rules.</purpose>
+      <path>app/services/offer_service.py</path>
+      <depends>M-REPO-OFFER, M-SCHEMAS-OFFER, M-SCHEMAS-PRODUCT</depends>
+      <verification-ref>V-M-SVC-OFFER</verification-ref>
+      <annotations><fn-sort_offers PURPOSE="Sort offers by price or delivery date." /></annotations>
+    </M-SVC-OFFER>
+
+    <M-SVC-ADMIN NAME="AdminCatalogService" TYPE="CORE_LOGIC" STATUS="phase1-complete">
+      <purpose>Admin CRUD orchestration and image upload persistence flow.</purpose>
+      <path>app/services/admin_catalog_service.py</path>
+      <depends>M-REPO-ADMIN, M-S3, M-SCHEMAS-ADMIN</depends>
+      <verification-ref>V-M-SVC-ADMIN</verification-ref>
+      <annotations><fn-upload_product_image_service PURPOSE="Upload images and persist object keys." /></annotations>
+    </M-SVC-ADMIN>
+
+    <M-SVC-AGENT NAME="AgentService" TYPE="CORE_LOGIC" STATUS="phase1-complete">
+      <purpose>Natural-language query interpretation, catalog filtering, and agent audit writing.</purpose>
+      <path>app/services/agent_service.py</path>
+      <depends>M-REPO-PRODUCT, M-MODELS-PLATFORM, M-SCHEMAS-AGENT, M-SCHEMAS-PRODUCT</depends>
+      <verification-ref>V-M-SVC-AGENT</verification-ref>
+      <annotations><fn-search_products PURPOSE="Parse intent and return product results." /><type-InterpretedIntent PURPOSE="Parsed agent query intent." /></annotations>
+    </M-SVC-AGENT>
+
+    <M-API-PUBLIC NAME="PublicApi" TYPE="ENTRY_POINT" STATUS="phase1-complete">
+      <purpose>Anonymous public product listing and detail HTTP API.</purpose>
+      <path>app/api/v1/public.py</path>
+      <depends>M-SVC-PRODUCT, M-SVC-OFFER, M-DB, M-SCHEMAS-PRODUCT, M-SCHEMAS-OFFER</depends>
+      <verification-ref>V-M-API-PUBLIC</verification-ref>
+      <annotations><fn-get_products PURPOSE="List public products." /><fn-get_product_detail PURPOSE="Return full product detail." /></annotations>
+    </M-API-PUBLIC>
+
+    <M-API-ADMIN-AUTH NAME="AdminAuthApi" TYPE="ENTRY_POINT" STATUS="phase1-complete">
+      <purpose>Platform admin login HTTP API.</purpose>
+      <path>app/api/v1/admin/auth.py</path>
+      <depends>M-AUTH, M-SCHEMAS-AUTH</depends>
+      <verification-ref>V-M-API-ADMIN-AUTH</verification-ref>
+      <annotations><fn-login PURPOSE="Return admin Bearer token." /></annotations>
+    </M-API-ADMIN-AUTH>
+
+    <M-API-ADMIN-CATALOG NAME="AdminCatalogApi" TYPE="ENTRY_POINT" STATUS="phase1-complete">
+      <purpose>Admin catalog CRUD and image upload HTTP API.</purpose>
+      <path>app/api/v1/admin/catalog.py</path>
+      <depends>M-AUTH, M-SVC-ADMIN, M-DB, M-SCHEMAS-ADMIN</depends>
+      <verification-ref>V-M-API-ADMIN-CATALOG</verification-ref>
+      <annotations><fn-upload_image PURPOSE="Upload image and return presigned URLs." /></annotations>
+    </M-API-ADMIN-CATALOG>
+
+    <M-API-AGENT NAME="AgentApi" TYPE="ENTRY_POINT" STATUS="phase1-complete">
+      <purpose>llms.txt discovery, capability context, and natural-language search HTTP API.</purpose>
+      <path>app/api/v1/agent.py</path>
+      <depends>M-SVC-AGENT, M-DB, M-SCHEMAS-AGENT, M-SCHEMAS-PRODUCT</depends>
+      <verification-ref>V-M-API-AGENT</verification-ref>
+      <annotations><fn-get_context PURPOSE="Return agent capability manifest." /><fn-search PURPOSE="Return filtered ProductListItem results." /><fn-get_llms_txt PURPOSE="Expose llms.txt manifest." /></annotations>
+    </M-API-AGENT>
+
+    <M-APP NAME="BackendApp" TYPE="ENTRY_POINT" STATUS="phase1-complete">
+      <purpose>FastAPI application assembly, middleware, router registration, and CORS.</purpose>
+      <path>app/main.py</path>
+      <depends>M-API-PUBLIC, M-API-ADMIN-AUTH, M-API-ADMIN-CATALOG, M-API-AGENT, M-CONFIG</depends>
+      <verification-ref>V-M-APP</verification-ref>
+      <annotations><export-app PURPOSE="FastAPI application for uvicorn." /></annotations>
+    </M-APP>
+
+    <M-SEED NAME="Seed" TYPE="UTILITY" STATUS="phase1-complete">
+      <purpose>Fresh-database seed generation with demo merchant ownership and current-week delivery dates.</purpose>
+      <path>seed.py</path>
+      <depends>M-DB, M-MIGRATIONS, M-MODELS-CATALOG, M-MODELS-PLATFORM, M-CONFIG</depends>
+      <verification-ref>V-M-SEED</verification-ref>
+      <annotations><fn-run_seed PURPOSE="Populate demo marketplace data." /></annotations>
+    </M-SEED>
+
+    <M-SCHEMAS-PRODUCT NAME="ProductSchemas" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Pydantic response schemas for public product listing, detail, and offer rendering.</purpose>
+      <path>app/schemas/product.py</path>
+      <depends>pydantic</depends>
+      <verification-ref>V-M-SCHEMAS-PRODUCT</verification-ref>
+      <annotations><type-ProductListItem PURPOSE="Paginated product list item." /><type-ProductDetailResponse PURPOSE="Full product detail payload." /><type-OfferResponse PURPOSE="Offer within product context." /></annotations>
+    </M-SCHEMAS-PRODUCT>
+
+    <M-SCHEMAS-OFFER NAME="OfferSchemas" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Pydantic schemas for offer sorting and offer list responses.</purpose>
+      <path>app/schemas/offer.py</path>
+      <depends>pydantic, M-SCHEMAS-PRODUCT</depends>
+      <verification-ref>V-M-SCHEMAS-OFFER</verification-ref>
+      <annotations><type-OfferSortEnum PURPOSE="Offer sort key enum." /><type-OfferListResponse PURPOSE="Sorted offer list payload." /></annotations>
+    </M-SCHEMAS-OFFER>
+
+    <M-SCHEMAS-AUTH NAME="AuthSchemas" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Pydantic request/response schemas for admin authentication.</purpose>
+      <path>app/schemas/auth.py</path>
+      <depends>pydantic</depends>
+      <verification-ref>V-M-SCHEMAS-AUTH</verification-ref>
+      <annotations><type-LoginRequest PURPOSE="Admin login request body." /><type-TokenResponse PURPOSE="JWT token response." /></annotations>
+    </M-SCHEMAS-AUTH>
+
+    <M-SCHEMAS-ADMIN NAME="AdminSchemas" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Pydantic request/response schemas for admin catalog CRUD operations.</purpose>
+      <path>app/schemas/admin.py</path>
+      <depends>pydantic</depends>
+      <verification-ref>V-M-SCHEMAS-ADMIN</verification-ref>
+      <annotations><type-SellerCreate PURPOSE="Seller creation payload." /><type-ProductCreate PURPOSE="Product creation payload." /><type-ImageUploadResponse PURPOSE="Upload result with presigned URLs." /></annotations>
+    </M-SCHEMAS-ADMIN>
+
+    <M-SCHEMAS-AGENT NAME="AgentSchemas" TYPE="DATA_LAYER" STATUS="phase1-complete">
+      <purpose>Pydantic schemas for agent search request, capabilities, and context response.</purpose>
+      <path>app/schemas/agent.py</path>
+      <depends>pydantic</depends>
+      <verification-ref>V-M-SCHEMAS-AGENT</verification-ref>
+      <annotations><type-AgentSearchRequest PURPOSE="Natural-language search query." /><type-AgentContextResponse PURPOSE="Agent capability manifest and endpoints." /></annotations>
+    </M-SCHEMAS-AGENT>
+
+    <M-FE-TOOLING NAME="FrontendTooling" TYPE="UTILITY" STATUS="phase1b">
+      <purpose>Frontend runtime, bundler, lint, Docker, environment, and HTML entry tooling.</purpose>
+      <path>../kodex-frontend/package.json</path>
+      <depends>M-INFRA-COMPOSE</depends>
+      <verification-ref>V-M-FE-TOOLING</verification-ref>
+      <annotations><export-tooling PURPOSE="package.json, vite, tsconfig, eslint, Docker, env, and index.html." /></annotations>
+    </M-FE-TOOLING>
+
+    <M-FE-SHARED-API NAME="FrontendSharedApi" TYPE="UTILITY" STATUS="phase1b">
+      <purpose>Single axios client, auth/error interceptors, and shared agent/public/admin API wrappers.</purpose>
+      <path>../kodex-frontend/src/shared/api/</path>
+      <depends>M-FE-TOOLING</depends>
+      <verification-ref>V-M-FE-SHARED-API</verification-ref>
+      <annotations><export-client PURPOSE="Shared axios client." /><fn-agentSearch PURPOSE="Natural-language agent search wrapper." /></annotations>
+    </M-FE-SHARED-API>
+
+    <M-FE-SHARED-UI NAME="FrontendSharedUi" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Shared presentation primitives used across widgets and pages.</purpose>
+      <path>../kodex-frontend/src/shared/ui/</path>
+      <depends>M-FE-TOOLING</depends>
+      <verification-ref>V-M-FE-SHARED-UI</verification-ref>
+      <annotations><export-button PURPOSE="Shared button primitive." /><export-spinner PURPOSE="Shared loading indicator." /></annotations>
+    </M-FE-SHARED-UI>
+
+    <M-FE-SHARED-LIB NAME="FrontendSharedLib" TYPE="UTILITY" STATUS="phase1b">
+      <purpose>Pure frontend formatting helpers and low-level shared utilities.</purpose>
+      <path>../kodex-frontend/src/shared/lib/</path>
+      <depends>M-FE-TOOLING</depends>
+      <verification-ref>V-M-FE-SHARED-LIB</verification-ref>
+      <annotations><fn-formatPrice PURPOSE="Format currency values." /><fn-formatDate PURPOSE="Format delivery dates for RU locale." /></annotations>
+    </M-FE-SHARED-LIB>
+
+    <M-FE-ENTITIES-PRODUCT NAME="FrontendProductEntity" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Typed product contracts and public/admin product API adapters.</purpose>
+      <path>../kodex-frontend/src/entities/product/</path>
+      <depends>M-FE-SHARED-API, M-FE-SHARED-LIB</depends>
+      <verification-ref>V-M-FE-ENTITIES-PRODUCT</verification-ref>
+      <annotations><type-ProductListItem PURPOSE="Catalog product list item." /><fn-fetchProducts PURPOSE="Paginated product fetch wrapper." /></annotations>
+    </M-FE-ENTITIES-PRODUCT>
+
+    <M-FE-ENTITIES-OFFER NAME="FrontendOfferEntity" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Typed offer contracts and public sort semantics.</purpose>
+      <path>../kodex-frontend/src/entities/offer/</path>
+      <depends>M-FE-SHARED-LIB</depends>
+      <verification-ref>V-M-FE-ENTITIES-OFFER</verification-ref>
+      <annotations><type-Offer PURPOSE="Offer contract for product detail rendering." /><type-OfferSort PURPOSE="Public offer sort key." /></annotations>
+    </M-FE-ENTITIES-OFFER>
+
+    <M-FE-ENTITIES-SELLER NAME="FrontendSellerEntity" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Typed seller contracts used by offers and admin flows.</purpose>
+      <path>../kodex-frontend/src/entities/seller/</path>
+      <depends>M-FE-SHARED-LIB</depends>
+      <verification-ref>V-M-FE-ENTITIES-SELLER</verification-ref>
+      <annotations><type-Seller PURPOSE="Seller contract for offers and tables." /></annotations>
+    </M-FE-ENTITIES-SELLER>
+
+    <M-FE-FEATURE-SCROLL NAME="FrontendInfiniteScrollFeature" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>IntersectionObserver-driven infinite scroll state and sentinel lifecycle.</purpose>
+      <path>../kodex-frontend/src/features/infinite-scroll/</path>
+      <depends>M-FE-ENTITIES-PRODUCT</depends>
+      <verification-ref>V-M-FE-FEATURE-SCROLL</verification-ref>
+      <annotations><fn-useInfiniteScroll PURPOSE="Cursor-based infinite scroll composable." /></annotations>
+    </M-FE-FEATURE-SCROLL>
+
+    <M-FE-FEATURE-SORT NAME="FrontendProductSortFeature" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Offer sort state and reusable SortButtons control.</purpose>
+      <path>../kodex-frontend/src/features/product-sort/</path>
+      <depends>M-FE-ENTITIES-OFFER, M-FE-SHARED-UI</depends>
+      <verification-ref>V-M-FE-FEATURE-SORT</verification-ref>
+      <annotations><fn-useSortOffers PURPOSE="Offer sort state composable." /><export-sort-buttons PURPOSE="SortButtons component." /></annotations>
+    </M-FE-FEATURE-SORT>
+
+    <M-FE-FEATURE-AUTH NAME="FrontendAdminAuthFeature" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Admin login/logout state, token persistence, and auth redirect behavior.</purpose>
+      <path>../kodex-frontend/src/features/admin-auth/</path>
+      <depends>M-FE-SHARED-API</depends>
+      <verification-ref>V-M-FE-FEATURE-AUTH</verification-ref>
+      <annotations><fn-useAdminAuth PURPOSE="Admin auth composable." /></annotations>
+    </M-FE-FEATURE-AUTH>
+
+    <M-FE-FEATURE-VOICE NAME="FrontendVoiceSearchFeature" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Voice-search support detection, speech recognition, and graceful fallback to agent text search.</purpose>
+      <path>../kodex-frontend/src/features/voice-search/</path>
+      <depends>M-FE-SHARED-API, M-FE-ENTITIES-PRODUCT</depends>
+      <verification-ref>V-M-FE-FEATURE-VOICE</verification-ref>
+      <annotations><fn-useVoiceSearch PURPOSE="Voice search composable." /><export-voice-button PURPOSE="VoiceSearchButton component." /></annotations>
+    </M-FE-FEATURE-VOICE>
+
+    <M-FE-WIDGET-CARD NAME="FrontendProductCardWidget" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Catalog product card widget with thumbnail, pricing, stock, and delivery rendering.</purpose>
+      <path>../kodex-frontend/src/widgets/product-card/</path>
+      <depends>M-FE-ENTITIES-PRODUCT, M-FE-SHARED-LIB</depends>
+      <verification-ref>V-M-FE-WIDGET-CARD</verification-ref>
+      <annotations><export-product-card PURPOSE="ProductCard widget." /></annotations>
+    </M-FE-WIDGET-CARD>
+
+    <M-FE-WIDGET-MODAL NAME="FrontendProductModalWidget" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Product detail modal with attribute rendering and sort-triggered re-fetch.</purpose>
+      <path>../kodex-frontend/src/widgets/product-modal/</path>
+      <depends>M-FE-FEATURE-SORT, M-FE-ENTITIES-PRODUCT, M-FE-SHARED-LIB</depends>
+      <verification-ref>V-M-FE-WIDGET-MODAL</verification-ref>
+      <annotations><export-product-modal PURPOSE="ProductModal widget." /></annotations>
+    </M-FE-WIDGET-MODAL>
+
+    <M-FE-WIDGET-TABLE NAME="FrontendProductsTableWidget" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Admin products table widget with typed row actions.</purpose>
+      <path>../kodex-frontend/src/widgets/products-table/</path>
+      <depends>M-FE-ENTITIES-PRODUCT, M-FE-SHARED-UI</depends>
+      <verification-ref>V-M-FE-WIDGET-TABLE</verification-ref>
+      <annotations><export-products-table PURPOSE="ProductsTable widget." /></annotations>
+    </M-FE-WIDGET-TABLE>
+
+    <M-FE-PAGE-CATALOG NAME="FrontendCatalogPage" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Public catalog page, agent-search handler, and infinite grid.</purpose>
+      <path>../kodex-frontend/src/pages/catalog/</path>
+      <depends>M-FE-WIDGET-CARD, M-FE-WIDGET-MODAL, M-FE-FEATURE-SCROLL, M-FE-FEATURE-VOICE</depends>
+      <verification-ref>V-M-FE-PAGE-CATALOG</verification-ref>
+      <annotations><export-catalog-page PURPOSE="Catalog page public export." /></annotations>
+    </M-FE-PAGE-CATALOG>
+
+    <M-FE-PAGE-PRODUCT NAME="FrontendProductPage" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Product detail fallback page with modal-based product view.</purpose>
+      <path>../kodex-frontend/src/pages/product/</path>
+      <depends>M-FE-WIDGET-MODAL</depends>
+      <verification-ref>V-M-FE-PAGE-PRODUCT</verification-ref>
+      <annotations><export-product-page PURPOSE="Product detail page export." /></annotations>
+    </M-FE-PAGE-PRODUCT>
+
+    <M-FE-PAGE-ADMIN NAME="FrontendAdminPages" TYPE="UI_COMPONENT" STATUS="phase1b">
+      <purpose>Login page and authenticated admin management page.</purpose>
+      <path>../kodex-frontend/src/pages/admin/</path>
+      <depends>M-FE-FEATURE-AUTH, M-FE-WIDGET-TABLE, M-FE-ENTITIES-PRODUCT</depends>
+      <verification-ref>V-M-FE-PAGE-ADMIN</verification-ref>
+      <annotations><export-login-page PURPOSE="Admin login page." /><export-admin-page PURPOSE="Admin management page." /></annotations>
+    </M-FE-PAGE-ADMIN>
+
+    <M-FE-APP NAME="FrontendApp" TYPE="ENTRY_POINT" STATUS="phase1b">
+      <purpose>Vue bootstrap, router, Pinia, route guards, and root app shell.</purpose>
+      <path>../kodex-frontend/src/app/</path>
+      <depends>M-FE-TOOLING, M-FE-PAGE-CATALOG, M-FE-PAGE-PRODUCT, M-FE-PAGE-ADMIN, M-FE-SHARED-API</depends>
+      <verification-ref>V-M-FE-APP</verification-ref>
+      <annotations><export-bootstrap PURPOSE="Vue bootstrap entry point." /><fn-create-router PURPOSE="Router and guard registration." /></annotations>
+    </M-FE-APP>
+
+    <M-MERCHANT NAME="MerchantPortal" TYPE="CORE_LOGIC" STATUS="phase2">
+      <purpose>Future merchant-scoped catalog management services and UI.</purpose>
+      <path>app/services/merchant_portal_service.py</path>
+      <depends>M-AUTH, M-REPO-ADMIN, M-MODELS-PLATFORM</depends>
+      <verification-ref>V-M-MERCHANT</verification-ref>
+      <annotations><export-merchant-catalog-service PURPOSE="Merchant-scoped catalog actions." /></annotations>
+    </M-MERCHANT>
+
+    <M-RBAC NAME="RbacPolicy" TYPE="UTILITY" STATUS="phase2">
+      <purpose>Role and merchant-scope authorization helpers.</purpose>
+      <path>app/core/rbac.py</path>
+      <depends>M-AUTH, M-CONFIG</depends>
+      <verification-ref>V-M-RBAC</verification-ref>
+      <annotations><fn-require_role PURPOSE="Validate role and merchant scope." /></annotations>
+    </M-RBAC>
+
+    <M-SEARCH NAME="SearchService" TYPE="CORE_LOGIC" STATUS="future">
+      <purpose>Future advanced search and ranking beyond base filters.</purpose>
+      <path>app/services/search_service.py</path>
+      <depends>M-REPO-PRODUCT, M-MODELS-CATALOG</depends>
+      <verification-ref>V-M-SEARCH</verification-ref>
+      <annotations><fn-run_search PURPOSE="Advanced search orchestration." /></annotations>
+    </M-SEARCH>
+
+    <M-RECOMMENDATIONS NAME="RecommendationsService" TYPE="INTEGRATION" STATUS="future">
+      <purpose>Optional recommendation engine integration behind feature flags.</purpose>
+      <path>app/services/recommendations_service.py</path>
+      <depends>M-CONFIG, M-REPO-PRODUCT</depends>
+      <verification-ref>V-M-RECOMMENDATIONS</verification-ref>
+      <annotations><fn-get_recommendations PURPOSE="Fetch optional recommendations." /></annotations>
+    </M-RECOMMENDATIONS>
+
+    <M-ORDERS NAME="OrdersDomain" TYPE="CORE_LOGIC" STATUS="future">
+      <purpose>Post-ТЗ order lifecycle and marketplace operations domain.</purpose>
+      <path>app/services/orders_service.py</path>
+      <depends>M-DB, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <verification-ref>V-M-ORDERS</verification-ref>
+      <annotations><fn-create_order PURPOSE="Create and manage orders." /></annotations>
+    </M-ORDERS>
+
+    <M-AGENT-AUDIT NAME="AgentAudit" TYPE="CORE_LOGIC" STATUS="phase2">
+      <purpose>Future richer agent audit analytics and replay support over agent_requests.</purpose>
+      <path>app/services/agent_audit_service.py</path>
+      <depends>M-DB, M-MODELS-PLATFORM</depends>
+      <verification-ref>V-M-AGENT-AUDIT</verification-ref>
+      <annotations><fn-record_agent_event PURPOSE="Persist enriched agent audit events." /></annotations>
+    </M-AGENT-AUDIT>
+    <!-- END_BLOCK_MODULES -->
+
+    <!-- START_BLOCK_CROSSLINKS -->
+    <CrossLink from="M-GOVERNANCE" to="M-INFRA-ENV" relation="governs" />
+    <CrossLink from="M-INFRA-ENV" to="M-INFRA-COMPOSE" relation="configures" />
+    <CrossLink from="M-INFRA-ENV" to="M-CONFIG" relation="feeds" />
+    <CrossLink from="M-CONFIG" to="M-DB" relation="configures" />
+    <CrossLink from="M-CONFIG" to="M-AUTH" relation="configures" />
+    <CrossLink from="M-CONFIG" to="M-S3" relation="configures" />
+    <CrossLink from="M-DB" to="M-MODELS-CATALOG" relation="backs" />
+    <CrossLink from="M-DB" to="M-MODELS-PLATFORM" relation="backs" />
+    <CrossLink from="M-MODELS-CATALOG" to="M-MIGRATIONS" relation="materialized-by" />
+    <CrossLink from="M-MODELS-PLATFORM" to="M-MIGRATIONS" relation="materialized-by" />
+    <CrossLink from="M-MODELS-CATALOG" to="M-REPO-PRODUCT" relation="queried-by" />
+    <CrossLink from="M-MODELS-CATALOG" to="M-REPO-OFFER" relation="queried-by" />
+    <CrossLink from="M-MODELS-CATALOG" to="M-REPO-ADMIN" relation="mutated-by" />
+    <CrossLink from="M-REPO-PRODUCT" to="M-SVC-PRODUCT" relation="supplies" />
+    <CrossLink from="M-REPO-OFFER" to="M-SVC-PRODUCT" relation="supplies" />
+    <CrossLink from="M-REPO-OFFER" to="M-SVC-OFFER" relation="supplies" />
+    <CrossLink from="M-S3" to="M-SVC-ADMIN" relation="integrated-by" />
+    <CrossLink from="M-REPO-ADMIN" to="M-SVC-ADMIN" relation="supplies" />
+    <CrossLink from="M-SCHEMAS-ADMIN" to="M-SVC-ADMIN" relation="shapes" />
+    <CrossLink from="M-REPO-PRODUCT" to="M-SVC-AGENT" relation="supplies" />
+    <CrossLink from="M-MODELS-PLATFORM" to="M-SVC-AGENT" relation="audited-through" />
+    <CrossLink from="M-SCHEMAS-AGENT" to="M-SVC-AGENT" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-PRODUCT" to="M-SVC-AGENT" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-PRODUCT" to="M-SVC-PRODUCT" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-OFFER" to="M-SVC-OFFER" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-PRODUCT" to="M-SVC-OFFER" relation="shapes" />
+    <CrossLink from="M-SVC-PRODUCT" to="M-API-PUBLIC" relation="served-by" />
+    <CrossLink from="M-SVC-OFFER" to="M-API-PUBLIC" relation="served-by" />
+    <CrossLink from="M-DB" to="M-API-PUBLIC" relation="provides-session" />
+    <CrossLink from="M-SCHEMAS-PRODUCT" to="M-API-PUBLIC" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-OFFER" to="M-API-PUBLIC" relation="shapes" />
+    <CrossLink from="M-AUTH" to="M-API-ADMIN-AUTH" relation="served-by" />
+    <CrossLink from="M-SCHEMAS-AUTH" to="M-API-ADMIN-AUTH" relation="shapes" />
+    <CrossLink from="M-SVC-ADMIN" to="M-API-ADMIN-CATALOG" relation="served-by" />
+    <CrossLink from="M-AUTH" to="M-API-ADMIN-CATALOG" relation="guards" />
+    <CrossLink from="M-DB" to="M-API-ADMIN-CATALOG" relation="provides-session" />
+    <CrossLink from="M-SCHEMAS-ADMIN" to="M-API-ADMIN-CATALOG" relation="shapes" />
+    <CrossLink from="M-SVC-AGENT" to="M-API-AGENT" relation="served-by" />
+    <CrossLink from="M-DB" to="M-API-AGENT" relation="provides-session" />
+    <CrossLink from="M-SCHEMAS-AGENT" to="M-API-AGENT" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-PRODUCT" to="M-API-AGENT" relation="shapes" />
+    <CrossLink from="M-SCHEMAS-PRODUCT" to="M-SCHEMAS-OFFER" relation="referenced-by" />
+    <CrossLink from="M-API-PUBLIC" to="M-APP" relation="registered-in" />
+    <CrossLink from="M-API-ADMIN-AUTH" to="M-APP" relation="registered-in" />
+    <CrossLink from="M-API-ADMIN-CATALOG" to="M-APP" relation="registered-in" />
+    <CrossLink from="M-API-AGENT" to="M-APP" relation="registered-in" />
+    <CrossLink from="M-MIGRATIONS" to="M-SEED" relation="precedes" />
+    <CrossLink from="M-CONFIG" to="M-SEED" relation="configures" />
+    <CrossLink from="M-MODELS-PLATFORM" to="M-SEED" relation="seeded-through" />
+    <CrossLink from="M-FE-TOOLING" to="M-FE-SHARED-API" relation="enables" />
+    <CrossLink from="M-FE-TOOLING" to="M-FE-SHARED-UI" relation="enables" />
+    <CrossLink from="M-FE-TOOLING" to="M-FE-SHARED-LIB" relation="enables" />
+    <CrossLink from="M-FE-SHARED-API" to="M-FE-ENTITIES-PRODUCT" relation="feeds" />
+    <CrossLink from="M-FE-SHARED-LIB" to="M-FE-ENTITIES-PRODUCT" relation="supports" />
+    <CrossLink from="M-FE-SHARED-LIB" to="M-FE-ENTITIES-OFFER" relation="supports" />
+    <CrossLink from="M-FE-SHARED-LIB" to="M-FE-ENTITIES-SELLER" relation="supports" />
+    <CrossLink from="M-FE-ENTITIES-PRODUCT" to="M-FE-FEATURE-SCROLL" relation="feeds" />
+    <CrossLink from="M-FE-ENTITIES-OFFER" to="M-FE-FEATURE-SORT" relation="feeds" />
+    <CrossLink from="M-FE-SHARED-UI" to="M-FE-FEATURE-SORT" relation="supports" />
+    <CrossLink from="M-FE-SHARED-API" to="M-FE-FEATURE-AUTH" relation="feeds" />
+    <CrossLink from="M-FE-SHARED-API" to="M-FE-FEATURE-VOICE" relation="feeds" />
+    <CrossLink from="M-FE-ENTITIES-PRODUCT" to="M-FE-FEATURE-VOICE" relation="supports" />
+    <CrossLink from="M-FE-ENTITIES-PRODUCT" to="M-FE-WIDGET-CARD" relation="feeds" />
+    <CrossLink from="M-FE-FEATURE-SORT" to="M-FE-WIDGET-MODAL" relation="feeds" />
+    <CrossLink from="M-FE-ENTITIES-PRODUCT" to="M-FE-WIDGET-MODAL" relation="feeds" />
+    <CrossLink from="M-FE-ENTITIES-PRODUCT" to="M-FE-WIDGET-TABLE" relation="feeds" />
+    <CrossLink from="M-FE-SHARED-UI" to="M-FE-WIDGET-TABLE" relation="supports" />
+    <CrossLink from="M-FE-PAGE-CATALOG" to="M-FE-WIDGET-CARD" relation="composes" />
+    <CrossLink from="M-FE-PAGE-CATALOG" to="M-FE-WIDGET-MODAL" relation="composes" />
+    <CrossLink from="M-FE-PAGE-CATALOG" to="M-FE-FEATURE-SCROLL" relation="uses" />
+    <CrossLink from="M-FE-PAGE-CATALOG" to="M-FE-FEATURE-VOICE" relation="uses" />
+    <CrossLink from="M-FE-PAGE-PRODUCT" to="M-FE-WIDGET-MODAL" relation="composes" />
+    <CrossLink from="M-FE-PAGE-PRODUCT" to="M-FE-APP" relation="registered-in" />
+    <CrossLink from="M-FE-PAGE-ADMIN" to="M-FE-FEATURE-AUTH" relation="uses" />
+    <CrossLink from="M-FE-PAGE-ADMIN" to="M-FE-WIDGET-TABLE" relation="composes" />
+    <CrossLink from="M-FE-WIDGET-MODAL" to="M-FE-FEATURE-SORT" relation="uses" />
+    <CrossLink from="M-FE-WIDGET-MODAL" to="M-FE-ENTITIES-PRODUCT" relation="uses" />
+    <CrossLink from="M-FE-FEATURE-VOICE" to="M-FE-SHARED-API" relation="uses" />
+    <CrossLink from="M-FE-SHARED-API" to="M-API-AGENT" relation="calls" />
+    <CrossLink from="M-FE-SHARED-API" to="M-API-PUBLIC" relation="calls" />
+    <CrossLink from="M-FE-SHARED-API" to="M-API-ADMIN-AUTH" relation="calls" />
+    <CrossLink from="M-FE-SHARED-API" to="M-API-ADMIN-CATALOG" relation="calls" />
+    <CrossLink from="M-FE-PAGE-CATALOG" to="M-FE-APP" relation="registered-in" />
+    <CrossLink from="M-FE-PAGE-ADMIN" to="M-FE-APP" relation="registered-in" />
+    <CrossLink from="M-AUTH" to="M-RBAC" relation="extends" />
+    <CrossLink from="M-RBAC" to="M-MERCHANT" relation="guards" />
+    <CrossLink from="M-MODELS-PLATFORM" to="M-MERCHANT" relation="scopes" />
+    <CrossLink from="M-MODELS-CATALOG" to="M-SEARCH" relation="indexes" />
+    <CrossLink from="M-REPO-PRODUCT" to="M-SEARCH" relation="feeds" />
+    <CrossLink from="M-CONFIG" to="M-RECOMMENDATIONS" relation="flags" />
+    <CrossLink from="M-MODELS-PLATFORM" to="M-AGENT-AUDIT" relation="persists-through" />
+    <!-- END_BLOCK_CROSSLINKS -->
+  </Project>
+</KnowledgeGraph>

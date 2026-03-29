@@ -1,0 +1,947 @@
+<DevelopmentPlan VERSION="0.2.2">
+  <!--
+  START_MODULE_CONTRACT
+  PURPOSE: Define the Kodex Phase 0 architecture, module contracts, data flows, and implementation order.
+  SCOPE: Backend, frontend, infrastructure, and future extension modules planned before any application code is generated.
+  DEPENDS: /Users/myevdokimov/prj/kodex/kodex-backend/docs/requirements.xml, /Users/myevdokimov/prj/kodex/kodex-backend/docs/technology.xml
+  LINKS: M-GOVERNANCE, DF-001, DF-002, DF-003, DF-004, DF-005, DF-006, DF-007
+  END_MODULE_CONTRACT
+  START_MODULE_MAP
+  architecture-notes - Phase 0 objectives, non-goals, and design risks
+  modules - Planned modules, contracts, paths, dependencies, and verification refs
+  data-flow - Execution narratives for the critical use cases
+  implementation-order - Phase and dependency-based execution sequence
+  execution-policy - Shared artifact ownership and worker constraints
+  END_MODULE_MAP
+  -->
+  <!-- START_CHANGE_SUMMARY
+  v0.2.0: Initial Phase 1 architecture.
+  v0.2.1 (2026-03-28): Updated all Phase 1 backend modules STATUS to "phase1-complete".
+  v0.2.2 (2026-03-29): Marked Phase 1 implementation steps complete to match the implemented backend surface.
+  -->
+  <!-- START_BLOCK_ARCHITECTURE_NOTES -->
+  <ArchitectureNotes>
+    <objective>Deliver a graded Phase 1 marketplace prototype without blocking Phase 2 multi-merchant, RBAC, agent, or search expansion.</objective>
+    <objective>Keep backend runtime fully async, preserve strict FSD boundaries on the frontend, and expose both human and machine-readable commerce interfaces.</objective>
+    <non-goal>No application code is generated in Phase 0; only structure, contracts, and planning artifacts are produced.</non-goal>
+    <risk-1>Async database and S3 boundaries must remain pure or the assignment fails on runtime constraints.</risk-1>
+    <risk-2>Phase 2 merchant scope can be blocked later if seller, merchant, and admin concepts are not separated in the schema now.</risk-2>
+    <risk-3>Agent search credibility depends on explicit interpretation headers and audit-ready traces, not just filtered results.</risk-3>
+  </ArchitectureNotes>
+  <!-- END_BLOCK_ARCHITECTURE_NOTES -->
+
+  <!-- START_BLOCK_MODULES -->
+  <Modules>
+    <M-GOVERNANCE NAME="GovernanceDocs" TYPE="UTILITY" LAYER="0" ORDER="1" STATUS="phase0-complete">
+      <contract>
+        <purpose>Define the GRACE operating constitution and keep planning artifacts coherent across repos.</purpose>
+        <inputs><param name="project-brief" type="BootstrapSpec" /></inputs>
+        <outputs><param name="governance-artifacts" type="MarkdownAndXmlDocs" /></outputs>
+        <errors><error code="DOC_DRIFT" /></errors>
+      </contract>
+      <interface><export-engineering-protocol PURPOSE="Project-wide engineering rules and semantic markup reference." /></interface>
+      <depends>none</depends>
+      <target><source>AGENTS.md</source><tests>docs/verification-plan.xml</tests></target>
+      <observability><log-prefix>[Governance]</log-prefix><critical-block>BLOCK_SYNC_ARTIFACTS</critical-block></observability>
+      <verification-ref>V-M-GOVERNANCE</verification-ref>
+      <notes><note-1>Backend repo owns shared GRACE documents for the full Kodex platform.</note-1></notes>
+    </M-GOVERNANCE>
+
+    <M-INFRA-ENV NAME="InfraEnv" TYPE="UTILITY" LAYER="0" ORDER="2" STATUS="phase0-complete">
+      <contract>
+        <purpose>Declare the local environment contract for database, storage, auth, CORS, and feature flags.</purpose>
+        <inputs><param name="bootstrap-values" type="EnvTemplate" /></inputs>
+        <outputs><param name="env-example" type="DotEnvFile" /></outputs>
+        <errors><error code="ENV_GAP" /></errors>
+      </contract>
+      <interface><export-env-template PURPOSE="Canonical .env.example for local setup." /></interface>
+      <depends>M-GOVERNANCE</depends>
+      <target><source>../kodex-infra/.env.example</source><tests>docs/verification-plan.xml</tests></target>
+      <observability><log-prefix>[InfraEnv]</log-prefix><critical-block>BLOCK_DEFINE_ENV_CONTRACT</critical-block></observability>
+      <verification-ref>V-M-INFRA-ENV</verification-ref>
+      <notes><note-1>Secrets remain placeholders in version control and become concrete only in local .env files.</note-1></notes>
+    </M-INFRA-ENV>
+
+    <M-INFRA-COMPOSE NAME="InfraCompose" TYPE="INTEGRATION" LAYER="0" ORDER="3" STATUS="phase0-complete">
+      <contract>
+        <purpose>Run the local Kodex development topology with health-gated startup and bind-mounted data.</purpose>
+        <inputs><param name="env" type="ComposeEnv" /></inputs>
+        <outputs><param name="stack" type="DockerComposeServices" /></outputs>
+        <errors><error code="SERVICE_BOOT_FAILURE" /></errors>
+      </contract>
+      <interface><export-compose-stack PURPOSE="PostgreSQL, MinIO, backend, and frontend development stack." /></interface>
+      <depends>M-INFRA-ENV</depends>
+      <target><source>../kodex-infra/docker-compose.yml</source><tests>docs/verification-plan.xml</tests></target>
+      <observability><log-prefix>[InfraCompose]</log-prefix><critical-block>BLOCK_DEFINE_SERVICE_DEPENDENCIES</critical-block></observability>
+      <verification-ref>V-M-INFRA-COMPOSE</verification-ref>
+      <notes><note-1>Backend must wait on postgres health, while MinIO only needs service-start readiness.</note-1></notes>
+    </M-INFRA-COMPOSE>
+
+    <M-CONFIG NAME="Config" TYPE="UTILITY" LAYER="0" ORDER="4" STATUS="phase1-complete">
+      <contract>
+        <purpose>Load and validate backend runtime settings from environment variables via Pydantic Settings.</purpose>
+        <inputs><param name="env" type="os.environ" /></inputs>
+        <outputs><param name="settings" type="BackendSettings" /></outputs>
+        <errors><error code="CONFIG_INVALID" /></errors>
+      </contract>
+      <interface><export-get_settings PURPOSE="Return validated backend settings singleton." /></interface>
+      <depends>M-INFRA-ENV</depends>
+      <target><source>app/core/config.py</source><tests>tests/core/test_config.py</tests></target>
+      <observability><log-prefix>[Config]</log-prefix><critical-block>BLOCK_LOAD_SETTINGS</critical-block></observability>
+      <verification-ref>V-M-CONFIG</verification-ref>
+      <notes><note-1>All secrets, URLs, and feature flags flow through this module.</note-1></notes>
+    </M-CONFIG>
+
+    <M-DB NAME="Database" TYPE="UTILITY" LAYER="0" ORDER="5" STATUS="phase1-complete">
+      <contract>
+        <purpose>Create async SQLAlchemy engine and session factories for FastAPI dependencies and seed workflows.</purpose>
+        <inputs><param name="database-url" type="AsyncPgUrl" /></inputs>
+        <outputs><param name="session-factory" type="AsyncSessionFactory" /></outputs>
+        <errors><error code="DB_CONNECTION_FAILURE" /></errors>
+      </contract>
+      <interface><export-get_session PURPOSE="Yield AsyncSession dependencies for handlers and services." /></interface>
+      <depends>M-CONFIG</depends>
+      <target><source>app/core/database.py</source><tests>tests/core/test_database.py</tests></target>
+      <observability><log-prefix>[Database]</log-prefix><critical-block>BLOCK_CREATE_SESSION</critical-block></observability>
+      <verification-ref>V-M-DB</verification-ref>
+      <notes><note-1>Request paths may use async SQLAlchemy only; sync calls are forbidden.</note-1></notes>
+    </M-DB>
+
+    <M-AUTH NAME="Auth" TYPE="UTILITY" LAYER="1" ORDER="1" STATUS="phase1-complete">
+      <contract>
+        <purpose>Provide admin password verification, JWT issuing, JWT decoding, and future role/merchant claim helpers.</purpose>
+        <inputs><param name="credentials-or-token" type="AuthPayload" /></inputs>
+        <outputs><param name="auth-result" type="JwtClaimsOrError" /></outputs>
+        <errors><error code="AUTH_INVALID" /></errors>
+      </contract>
+      <interface><export-login_admin PURPOSE="Authenticate platform admin and create Bearer JWT." /></interface>
+      <depends>M-CONFIG</depends>
+      <target><source>app/core/auth.py</source><tests>tests/core/test_auth.py</tests></target>
+      <observability><log-prefix>[Auth]</log-prefix><critical-block>BLOCK_CREATE_ACCESS_TOKEN</critical-block></observability>
+      <verification-ref>V-M-AUTH</verification-ref>
+      <notes><note-1>JWT schema must remain compatible with future merchant_admin role and merchant_id claim.</note-1></notes>
+    </M-AUTH>
+
+    <M-MODELS-CATALOG NAME="CatalogModels" TYPE="DATA_LAYER" LAYER="1" ORDER="2" STATUS="phase1-complete">
+      <contract>
+        <purpose>Define SQLAlchemy models for products, sellers, offers, and product attributes.</purpose>
+        <inputs><param name="schema-metadata" type="SQLAlchemyMetaData" /></inputs>
+        <outputs><param name="catalog-models" type="OrmModels" /></outputs>
+        <errors><error code="MODEL_SCHEMA_DRIFT" /></errors>
+      </contract>
+      <interface><export-product PURPOSE="Product model with merchant_id, status, and search_vector prep." /></interface>
+      <depends>M-DB</depends>
+      <target><source>app/models/catalog.py</source><tests>tests/models/test_catalog_models.py</tests></target>
+      <observability><log-prefix>[CatalogModels]</log-prefix><critical-block>BLOCK_DECLARE_CATALOG_SCHEMA</critical-block></observability>
+      <verification-ref>V-M-MODELS-CATALOG</verification-ref>
+      <notes><note-1>nearest_delivery_date is computed in queries, not persisted on the product row.</note-1></notes>
+    </M-MODELS-CATALOG>
+
+    <M-MODELS-PLATFORM NAME="PlatformModels" TYPE="DATA_LAYER" LAYER="1" ORDER="3" STATUS="phase1-complete">
+      <contract>
+        <purpose>Define SQLAlchemy models for merchants and agent request audit records required for Phase 2 preparation.</purpose>
+        <inputs><param name="schema-metadata" type="SQLAlchemyMetaData" /></inputs>
+        <outputs><param name="platform-models" type="OrmModels" /></outputs>
+        <errors><error code="MODEL_SCHEMA_DRIFT" /></errors>
+      </contract>
+      <interface><export-merchant PURPOSE="Merchant model used for Phase 1 demo ownership and Phase 2 RBAC scope." /></interface>
+      <depends>M-DB</depends>
+      <target><source>app/models/platform.py</source><tests>tests/models/test_platform_models.py</tests></target>
+      <observability><log-prefix>[PlatformModels]</log-prefix><critical-block>BLOCK_DECLARE_PLATFORM_SCHEMA</critical-block></observability>
+      <verification-ref>V-M-MODELS-PLATFORM</verification-ref>
+      <notes><note-1>agent_requests persists endpoint, query, interpreted_intent, result_count, response_ms, and created_at.</note-1></notes>
+    </M-MODELS-PLATFORM>
+
+    <M-MIGRATIONS NAME="Migrations" TYPE="DATA_LAYER" LAYER="1" ORDER="4" STATUS="phase1-complete">
+      <contract>
+        <purpose>Materialize the Phase 1 schema, including PHASE_2_PREP columns and indexes, through Alembic CLI migrations.</purpose>
+        <inputs><param name="model-metadata" type="OrmMeta" /></inputs>
+        <outputs><param name="database-schema" type="MigratedDatabase" /></outputs>
+        <errors><error code="MIGRATION_FAILURE" /></errors>
+      </contract>
+      <interface><export-upgrade-head PURPOSE="Alembic upgrade head sync workflow." /></interface>
+      <depends>M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <target><source>alembic/versions/*.py</source><tests>tests/migrations/test_phase1_schema.py</tests></target>
+      <observability><log-prefix>[Migrations]</log-prefix><critical-block>BLOCK_APPLY_PHASE1_SCHEMA</critical-block></observability>
+      <verification-ref>V-M-MIGRATIONS</verification-ref>
+      <notes><note-1>search_vector uses a russian tsvector generated column with a GIN index.</note-1></notes>
+    </M-MIGRATIONS>
+
+    <M-FE-TOOLING NAME="FrontendTooling" TYPE="UTILITY" LAYER="0" ORDER="6" STATUS="phase1b">
+      <contract>
+        <purpose>Define the frontend runtime contract, build tooling, lint rules, Docker image, and environment defaults.</purpose>
+        <inputs><param name="frontend-stack" type="VueTsToolingSpec" /></inputs>
+        <outputs><param name="tooling-files" type="FrontendToolingArtifacts" /></outputs>
+        <errors><error code="TOOLING_CONFIG_INVALID" /></errors>
+      </contract>
+      <interface><export-tooling PURPOSE="package.json, Vite, TypeScript, ESLint, Docker, and env bootstrap." /></interface>
+      <depends>M-INFRA-COMPOSE</depends>
+      <target>
+        <source>../kodex-frontend/package.json</source>
+        <source>../kodex-frontend/vite.config.ts</source>
+        <source>../kodex-frontend/tsconfig.json</source>
+        <source>../kodex-frontend/eslint.config.js</source>
+        <source>../kodex-frontend/Dockerfile</source>
+        <source>../kodex-frontend/.env.example</source>
+        <source>../kodex-frontend/index.html</source>
+        <source>../kodex-frontend/src/env.d.ts</source>
+        <tests>../kodex-frontend/package.json</tests>
+      </target>
+      <observability><log-prefix>[FrontendTooling]</log-prefix><critical-block>BLOCK_DEFINE_TOOLCHAIN</critical-block></observability>
+      <verification-ref>V-M-FE-TOOLING</verification-ref>
+      <notes><note-1>Owns the static verification surface required before any frontend slice can be trusted.</note-1></notes>
+    </M-FE-TOOLING>
+
+    <M-FE-SHARED-API NAME="FrontendSharedApi" TYPE="UTILITY" LAYER="1" ORDER="1" STATUS="phase1b">
+      <contract>
+        <purpose>Provide the single typed HTTP client and shared agent/public/admin API helpers for the frontend.</purpose>
+        <inputs><param name="request-config" type="AxiosRequestConfig" /></inputs>
+        <outputs><param name="shared-api" type="SharedApiExports" /></outputs>
+        <errors><error code="CLIENT_REQUEST_FAILED" /></errors>
+      </contract>
+      <interface><export-client PURPOSE="Shared axios instance with auth and error interceptors." /></interface>
+      <depends>M-FE-TOOLING</depends>
+      <target>
+        <source>../kodex-frontend/src/shared/api/client.ts</source>
+        <source>../kodex-frontend/src/shared/api/agentApi.ts</source>
+        <source>../kodex-frontend/src/shared/api/index.ts</source>
+        <tests>../kodex-frontend/src/shared/api/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[FrontendShared]</log-prefix><critical-block>BLOCK_AUTH_INTERCEPTOR</critical-block></observability>
+      <verification-ref>V-M-FE-SHARED-API</verification-ref>
+      <notes><note-1>No component or entity may issue HTTP outside this module.</note-1></notes>
+    </M-FE-SHARED-API>
+
+    <M-FE-SHARED-UI NAME="FrontendSharedUi" TYPE="UI_COMPONENT" LAYER="1" ORDER="2" STATUS="phase1b">
+      <contract>
+        <purpose>Provide shared UI primitives that can be reused across features, widgets, and pages without leaking business logic.</purpose>
+        <inputs><param name="ui-props" type="SharedUiProps" /></inputs>
+        <outputs><param name="shared-ui" type="SharedUiExports" /></outputs>
+        <errors><error code="UI_RENDER_FAILURE" /></errors>
+      </contract>
+      <interface><export-button PURPOSE="Shared button primitive with typed props and emits." /></interface>
+      <depends>M-FE-TOOLING</depends>
+      <target>
+        <source>../kodex-frontend/src/shared/ui/Spinner.vue</source>
+        <source>../kodex-frontend/src/shared/ui/Button.vue</source>
+        <source>../kodex-frontend/src/shared/ui/Badge.vue</source>
+        <source>../kodex-frontend/src/shared/ui/index.ts</source>
+        <tests>../kodex-frontend/src/shared/ui/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[FrontendSharedUi]</log-prefix><critical-block>BLOCK_RENDER_SHARED_UI</critical-block></observability>
+      <verification-ref>V-M-FE-SHARED-UI</verification-ref>
+      <notes><note-1>Contains no data fetching or slice-specific business rules.</note-1></notes>
+    </M-FE-SHARED-UI>
+
+    <M-FE-SHARED-LIB NAME="FrontendSharedLib" TYPE="UTILITY" LAYER="1" ORDER="3" STATUS="phase1b">
+      <contract>
+        <purpose>Provide pure formatting and low-level helpers shared across the frontend.</purpose>
+        <inputs><param name="primitive-values" type="FormattingInputs" /></inputs>
+        <outputs><param name="formatted-values" type="FormattingOutputs" /></outputs>
+        <errors><error code="FORMATTER_INVALID_INPUT" /></errors>
+      </contract>
+      <interface><export-formatters PURPOSE="formatPrice and formatDate helpers with stable RU locale output." /></interface>
+      <depends>M-FE-TOOLING</depends>
+      <target>
+        <source>../kodex-frontend/src/shared/lib/formatPrice.ts</source>
+        <source>../kodex-frontend/src/shared/lib/formatDate.ts</source>
+        <source>../kodex-frontend/src/shared/lib/index.ts</source>
+        <tests>../kodex-frontend/src/shared/lib/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[FrontendSharedLib]</log-prefix><critical-block>BLOCK_FORMAT_OUTPUT</critical-block></observability>
+      <verification-ref>V-M-FE-SHARED-LIB</verification-ref>
+      <notes><note-1>Pure helpers only; no imports from entities, features, widgets, or pages.</note-1></notes>
+    </M-FE-SHARED-LIB>
+
+    <M-REPO-PRODUCT NAME="ProductRepository" TYPE="DATA_LAYER" LAYER="2" ORDER="1" STATUS="phase1-complete">
+      <contract>
+        <purpose>Query products for public catalog, detail, and agent search use cases without N+1 behavior.</purpose>
+        <inputs><param name="filters" type="ProductQueryFilters" /></inputs>
+        <outputs><param name="product-records" type="ProductReadModels" /></outputs>
+        <errors><error code="PRODUCT_QUERY_FAILED" /></errors>
+      </contract>
+      <interface><export-list_paginated PURPOSE="Cursor-paginated product listing with nearest delivery date scalar subquery." /></interface>
+      <depends>M-DB, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <target><source>app/repositories/product_repo.py</source><tests>tests/repositories/test_product_repo.py</tests></target>
+      <observability><log-prefix>[ProductRepo]</log-prefix><critical-block>BLOCK_LIST_PAGINATED</critical-block></observability>
+      <verification-ref>V-M-REPO-PRODUCT</verification-ref>
+      <notes><note-1>Future merchant scoping hooks are added here by merchant_id filters.</note-1></notes>
+    </M-REPO-PRODUCT>
+
+    <M-REPO-OFFER NAME="OfferRepository" TYPE="DATA_LAYER" LAYER="2" ORDER="2" STATUS="phase1-complete">
+      <contract>
+        <purpose>Load offer collections for product detail and admin write workflows with stable ordering options.</purpose>
+        <inputs><param name="product-id" type="UUID" /></inputs>
+        <outputs><param name="offers" type="OfferReadModels" /></outputs>
+        <errors><error code="OFFER_QUERY_FAILED" /></errors>
+      </contract>
+      <interface><export-list_for_product PURPOSE="Return offers sorted by price or delivery date." /></interface>
+      <depends>M-DB, M-MODELS-CATALOG</depends>
+      <target><source>app/repositories/offer_repo.py</source><tests>tests/repositories/test_offer_repo.py</tests></target>
+      <observability><log-prefix>[OfferRepo]</log-prefix><critical-block>BLOCK_LIST_FOR_PRODUCT</critical-block></observability>
+      <verification-ref>V-M-REPO-OFFER</verification-ref>
+      <notes><note-1>Sorting must be deterministic to keep modal toggles stable without full page reloads.</note-1></notes>
+    </M-REPO-OFFER>
+
+    <M-REPO-ADMIN NAME="AdminCatalogRepository" TYPE="DATA_LAYER" LAYER="2" ORDER="3" STATUS="phase1-complete">
+      <contract>
+        <purpose>Persist admin CRUD changes for products, sellers, offers, and media object keys.</purpose>
+        <inputs><param name="admin-command" type="CatalogMutation" /></inputs>
+        <outputs><param name="persisted-record" type="CatalogEntity" /></outputs>
+        <errors><error code="ADMIN_MUTATION_FAILED" /></errors>
+      </contract>
+      <interface><export-save_product_image_keys PURPOSE="Persist original and thumbnail object key references on products." /></interface>
+      <depends>M-DB, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <target><source>app/repositories/admin_catalog_repo.py</source><tests>tests/repositories/test_admin_catalog_repo.py</tests></target>
+      <observability><log-prefix>[AdminRepo]</log-prefix><critical-block>BLOCK_PERSIST_CATALOG_MUTATION</critical-block></observability>
+      <verification-ref>V-M-REPO-ADMIN</verification-ref>
+      <notes><note-1>Repository surface remains platform-admin scoped in Phase 1 and becomes merchant-aware later.</note-1></notes>
+    </M-REPO-ADMIN>
+
+    <M-S3 NAME="S3Service" TYPE="INTEGRATION" LAYER="2" ORDER="4" STATUS="phase1-complete">
+      <contract>
+        <purpose>Upload original product images and generated thumbnails to MinIO using aioboto3 and Pillow.</purpose>
+        <inputs><param name="image-bytes" type="UploadFile" /></inputs>
+        <outputs><param name="object-keys-and-urls" type="StoredImageRefs" /></outputs>
+        <errors><error code="IMAGE_UPLOAD_FAILED" /></errors>
+      </contract>
+      <interface><export-upload_product_image PURPOSE="Store original plus 300x300 JPEG thumbnail and return presigned URLs." /></interface>
+      <depends>M-CONFIG</depends>
+      <target><source>app/services/s3_service.py</source><tests>tests/services/test_s3_service.py</tests></target>
+      <observability><log-prefix>[S3Service]</log-prefix><critical-block>BLOCK_UPLOAD_THUMBNAIL_PAIR</critical-block></observability>
+      <verification-ref>V-M-S3</verification-ref>
+      <notes><note-1>Only aioboto3 is allowed in request paths; sync boto3 is forbidden.</note-1></notes>
+    </M-S3>
+
+    <M-FE-ENTITIES-PRODUCT NAME="FrontendProductEntity" TYPE="UI_COMPONENT" LAYER="2" ORDER="1" STATUS="phase1b">
+      <contract>
+        <purpose>Define typed product contracts and public/admin product API adapters for catalog, detail, and admin views.</purpose>
+        <inputs><param name="product-responses" type="ProductApiPayloads" /></inputs>
+        <outputs><param name="product-entity-api" type="ProductEntityExports" /></outputs>
+        <errors><error code="PRODUCT_ENTITY_INVALID" /></errors>
+      </contract>
+      <interface><export-product-types PURPOSE="Typed product list/detail/admin contracts and API helpers." /></interface>
+      <depends>M-FE-SHARED-API, M-FE-SHARED-LIB</depends>
+      <target>
+        <source>../kodex-frontend/src/entities/product/model/types.ts</source>
+        <source>../kodex-frontend/src/entities/product/api/fetchProducts.ts</source>
+        <source>../kodex-frontend/src/entities/product/api/fetchProductById.ts</source>
+        <source>../kodex-frontend/src/entities/product/api/adminProductApi.ts</source>
+        <source>../kodex-frontend/src/entities/product/index.ts</source>
+        <tests>../kodex-frontend/src/entities/product/**/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[ProductEntityApi]</log-prefix><critical-block>BLOCK_REQUEST_PRODUCTS</critical-block></observability>
+      <verification-ref>V-M-FE-ENTITIES-PRODUCT</verification-ref>
+      <notes><note-1>Must remain self-contained and avoid importing other entity slices to preserve strict FSD discipline.</note-1></notes>
+    </M-FE-ENTITIES-PRODUCT>
+
+    <M-FE-ENTITIES-OFFER NAME="FrontendOfferEntity" TYPE="UI_COMPONENT" LAYER="2" ORDER="2" STATUS="phase1b">
+      <contract>
+        <purpose>Define typed offer contracts and sort semantics shared by widgets and features.</purpose>
+        <inputs><param name="offer-values" type="OfferDtoValues" /></inputs>
+        <outputs><param name="offer-entity" type="OfferEntityExports" /></outputs>
+        <errors><error code="OFFER_ENTITY_INVALID" /></errors>
+      </contract>
+      <interface><export-offer-types PURPOSE="Offer and OfferSort public exports." /></interface>
+      <depends>M-FE-SHARED-LIB</depends>
+      <target>
+        <source>../kodex-frontend/src/entities/offer/model/types.ts</source>
+        <source>../kodex-frontend/src/entities/offer/index.ts</source>
+        <tests>../kodex-frontend/src/entities/offer/**/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[OfferEntity]</log-prefix><critical-block>BLOCK_DEFINE_OFFER_TYPES</critical-block></observability>
+      <verification-ref>V-M-FE-ENTITIES-OFFER</verification-ref>
+      <notes><note-1>Provides only public types; data fetching remains in the product entity API.</note-1></notes>
+    </M-FE-ENTITIES-OFFER>
+
+    <M-FE-ENTITIES-SELLER NAME="FrontendSellerEntity" TYPE="UI_COMPONENT" LAYER="2" ORDER="3" STATUS="phase1b">
+      <contract>
+        <purpose>Define typed seller contracts for offers and admin table rendering.</purpose>
+        <inputs><param name="seller-values" type="SellerDtoValues" /></inputs>
+        <outputs><param name="seller-entity" type="SellerEntityExports" /></outputs>
+        <errors><error code="SELLER_ENTITY_INVALID" /></errors>
+      </contract>
+      <interface><export-seller-types PURPOSE="Seller public types for offer and page composition." /></interface>
+      <depends>M-FE-SHARED-LIB</depends>
+      <target>
+        <source>../kodex-frontend/src/entities/seller/model/types.ts</source>
+        <source>../kodex-frontend/src/entities/seller/index.ts</source>
+        <tests>../kodex-frontend/src/entities/seller/**/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[SellerEntity]</log-prefix><critical-block>BLOCK_DEFINE_SELLER_TYPES</critical-block></observability>
+      <verification-ref>V-M-FE-ENTITIES-SELLER</verification-ref>
+      <notes><note-1>Purely structural; no network or browser-side behavior lives here.</note-1></notes>
+    </M-FE-ENTITIES-SELLER>
+
+    <M-SVC-PRODUCT NAME="ProductService" TYPE="CORE_LOGIC" LAYER="3" ORDER="1" STATUS="phase1-complete">
+      <contract>
+        <purpose>Assemble public catalog and product detail responses from repository data and response schemas.</purpose>
+        <inputs><param name="catalog-query" type="PublicCatalogQuery" /></inputs>
+        <outputs><param name="catalog-response" type="ProductListOrDetail" /></outputs>
+        <errors><error code="PUBLIC_PRODUCT_FAILURE" /></errors>
+      </contract>
+      <interface><export-list_products PURPOSE="Return cursor-based product listing payload with next cursor metadata." /></interface>
+      <depends>M-REPO-PRODUCT, M-REPO-OFFER</depends>
+      <target><source>app/services/product_service.py</source><tests>tests/services/test_product_service.py</tests></target>
+      <observability><log-prefix>[ProductService]</log-prefix><critical-block>BLOCK_BUILD_PUBLIC_PRODUCT_RESPONSE</critical-block></observability>
+      <verification-ref>V-M-SVC-PRODUCT</verification-ref>
+      <notes><note-1>Public list items and agent search items share the same projection shape.</note-1></notes>
+    </M-SVC-PRODUCT>
+
+    <M-SVC-OFFER NAME="OfferService" TYPE="CORE_LOGIC" LAYER="3" ORDER="2" STATUS="phase1-complete">
+      <contract>
+        <purpose>Apply offer sorting rules and response shaping for product detail and admin views.</purpose>
+        <inputs><param name="sort" type="OfferSortKey" /></inputs>
+        <outputs><param name="sorted-offers" type="OfferList" /></outputs>
+        <errors><error code="OFFER_SORT_FAILED" /></errors>
+      </contract>
+      <interface><export-sort_offers PURPOSE="Sort offer collections by price or delivery date." /></interface>
+      <depends>M-REPO-OFFER</depends>
+      <target><source>app/services/offer_service.py</source><tests>tests/services/test_offer_service.py</tests></target>
+      <observability><log-prefix>[OfferService]</log-prefix><critical-block>BLOCK_SORT_OFFERS</critical-block></observability>
+      <verification-ref>V-M-SVC-OFFER</verification-ref>
+      <notes><note-1>Sorting rules must stay consistent with frontend SortButtons semantics.</note-1></notes>
+    </M-SVC-OFFER>
+
+    <M-SVC-ADMIN NAME="AdminCatalogService" TYPE="CORE_LOGIC" LAYER="3" ORDER="3" STATUS="phase1-complete">
+      <contract>
+        <purpose>Coordinate admin CRUD operations, image uploads, and product media metadata persistence.</purpose>
+        <inputs><param name="admin-request" type="CatalogAdminCommand" /></inputs>
+        <outputs><param name="admin-result" type="CatalogMutationResult" /></outputs>
+        <errors><error code="ADMIN_SERVICE_FAILURE" /></errors>
+      </contract>
+      <interface><export-upload_product_image PURPOSE="Persist original and thumbnail object keys after MinIO upload." /></interface>
+      <depends>M-REPO-ADMIN, M-S3</depends>
+      <target><source>app/services/admin_catalog_service.py</source><tests>tests/services/test_admin_catalog_service.py</tests></target>
+      <observability><log-prefix>[AdminService]</log-prefix><critical-block>BLOCK_UPLOAD_AND_PERSIST_IMAGE</critical-block></observability>
+      <verification-ref>V-M-SVC-ADMIN</verification-ref>
+      <notes><note-1>Image upload is the highest-risk admin path because it spans storage, Pillow, and DB persistence.</note-1></notes>
+    </M-SVC-ADMIN>
+
+    <M-SVC-AGENT NAME="AgentService" TYPE="CORE_LOGIC" LAYER="3" ORDER="4" STATUS="phase1-complete">
+      <contract>
+        <purpose>Interpret natural-language product queries, query catalog data, and record audit-ready agent search metadata.</purpose>
+        <inputs><param name="query" type="NaturalLanguageQuery" /></inputs>
+        <outputs><param name="agent-result" type="InterpretedSearchResponse" /></outputs>
+        <errors><error code="AGENT_SEARCH_FAILURE" /></errors>
+      </contract>
+      <interface><export-search_products PURPOSE="Parse intent and return ProductListItem-compatible search results." /></interface>
+      <depends>M-REPO-PRODUCT, M-MODELS-PLATFORM</depends>
+      <target><source>app/services/agent_service.py</source><tests>tests/services/test_agent_service.py</tests></target>
+      <observability><log-prefix>[AgentService]</log-prefix><critical-block>BLOCK_PARSE_QUERY_INTENT</critical-block></observability>
+      <verification-ref>V-M-SVC-AGENT</verification-ref>
+      <notes><note-1>X-Query-Interpreted and agent_requests are the evidence surfaces for intent parsing correctness.</note-1></notes>
+    </M-SVC-AGENT>
+
+    <M-FE-FEATURE-SCROLL NAME="FrontendInfiniteScrollFeature" TYPE="UI_COMPONENT" LAYER="3" ORDER="1" STATUS="phase1b">
+      <contract>
+        <purpose>Implement IntersectionObserver-based catalog pagination state and sentinel lifecycle.</purpose>
+        <inputs><param name="sentinel-ref" type="RefOrNull" /></inputs>
+        <outputs><param name="scroll-state" type="InfiniteScrollState" /></outputs>
+        <errors><error code="SCROLL_FETCH_FAILED" /></errors>
+      </contract>
+      <interface><export-useInfiniteScroll PURPOSE="Composable for cursor-based catalog pagination." /></interface>
+      <depends>M-FE-ENTITIES-PRODUCT</depends>
+      <target>
+        <source>../kodex-frontend/src/features/infinite-scroll/useInfiniteScroll.ts</source>
+        <source>../kodex-frontend/src/features/infinite-scroll/index.ts</source>
+        <tests>../kodex-frontend/src/features/infinite-scroll/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[InfiniteScroll]</log-prefix><critical-block>BLOCK_LOAD_PAGE</critical-block></observability>
+      <verification-ref>V-M-FE-FEATURE-SCROLL</verification-ref>
+      <notes><note-1>Must prevent concurrent page loads and expose deterministic reset behavior for agent search results.</note-1></notes>
+    </M-FE-FEATURE-SCROLL>
+
+    <M-FE-FEATURE-SORT NAME="FrontendProductSortFeature" TYPE="UI_COMPONENT" LAYER="3" ORDER="2" STATUS="phase1b">
+      <contract>
+        <purpose>Implement offer sorting state and the sort button control used by the product modal.</purpose>
+        <inputs><param name="initial-sort" type="OfferSort" /></inputs>
+        <outputs><param name="sort-controls" type="OfferSortFeatureExports" /></outputs>
+        <errors><error code="SORT_STATE_INVALID" /></errors>
+      </contract>
+      <interface><export-sort-controls PURPOSE="useSortOffers composable and SortButtons component." /></interface>
+      <depends>M-FE-ENTITIES-OFFER, M-FE-SHARED-UI</depends>
+      <target>
+        <source>../kodex-frontend/src/features/product-sort/useSortOffers.ts</source>
+        <source>../kodex-frontend/src/features/product-sort/SortButtons.vue</source>
+        <source>../kodex-frontend/src/features/product-sort/index.ts</source>
+        <tests>../kodex-frontend/src/features/product-sort/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[ProductSort]</log-prefix><critical-block>BLOCK_SET_SORT</critical-block></observability>
+      <verification-ref>V-M-FE-FEATURE-SORT</verification-ref>
+      <notes><note-1>SortButtons owns no fetching logic; it only emits the selected public sort value.</note-1></notes>
+    </M-FE-FEATURE-SORT>
+
+    <M-FE-FEATURE-AUTH NAME="FrontendAdminAuthFeature" TYPE="UI_COMPONENT" LAYER="3" ORDER="3" STATUS="phase1b">
+      <contract>
+        <purpose>Implement admin login/logout state, token persistence, and route redirection behavior.</purpose>
+        <inputs><param name="credentials" type="AdminCredentials" /></inputs>
+        <outputs><param name="auth-state" type="AdminAuthState" /></outputs>
+        <errors><error code="ADMIN_LOGIN_FAILED" /></errors>
+      </contract>
+      <interface><export-admin-auth PURPOSE="useAdminAuth composable for login, logout, and auth status." /></interface>
+      <depends>M-FE-SHARED-API</depends>
+      <target>
+        <source>../kodex-frontend/src/features/admin-auth/useAdminAuth.ts</source>
+        <source>../kodex-frontend/src/features/admin-auth/index.ts</source>
+        <tests>../kodex-frontend/src/features/admin-auth/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[AdminAuthFeature]</log-prefix><critical-block>BLOCK_SUBMIT_LOGIN</critical-block></observability>
+      <verification-ref>V-M-FE-FEATURE-AUTH</verification-ref>
+      <notes><note-1>Owns token lifecycle but delegates actual request construction to shared/api/client.ts.</note-1></notes>
+    </M-FE-FEATURE-AUTH>
+
+    <M-FE-FEATURE-VOICE NAME="FrontendVoiceSearchFeature" TYPE="UI_COMPONENT" LAYER="3" ORDER="4" STATUS="phase1b">
+      <contract>
+        <purpose>Implement Web Speech API voice capture, graceful fallback, and typed agent-search integration.</purpose>
+        <inputs><param name="browser-capabilities" type="WindowSpeechSupport" /></inputs>
+        <outputs><param name="voice-search-state" type="VoiceSearchExports" /></outputs>
+        <errors><error code="VOICE_SEARCH_FAILED" /></errors>
+      </contract>
+      <interface><export-voice-search PURPOSE="useVoiceSearch composable and VoiceSearchButton component." /></interface>
+      <depends>M-FE-SHARED-API, M-FE-ENTITIES-PRODUCT</depends>
+      <target>
+        <source>../kodex-frontend/src/features/voice-search/useVoiceSearch.ts</source>
+        <source>../kodex-frontend/src/features/voice-search/VoiceSearchButton.vue</source>
+        <source>../kodex-frontend/src/features/voice-search/index.ts</source>
+        <tests>../kodex-frontend/src/features/voice-search/*.test.ts</tests>
+      </target>
+      <observability><log-prefix>[VoiceSearch]</log-prefix><critical-block>BLOCK_SUPPORT_CHECK</critical-block></observability>
+      <verification-ref>V-M-FE-FEATURE-VOICE</verification-ref>
+      <notes><note-1>When speech support is absent, the feature must degrade silently and keep text search available.</note-1></notes>
+    </M-FE-FEATURE-VOICE>
+
+    <M-API-PUBLIC NAME="PublicApi" TYPE="ENTRY_POINT" LAYER="4" ORDER="1" STATUS="phase1-complete">
+      <contract>
+        <purpose>Expose public catalog and product detail endpoints for anonymous visitors and frontend consumers.</purpose>
+        <inputs><param name="http-request" type="FastAPIRequest" /></inputs>
+        <outputs><param name="http-response" type="ProductApiPayload" /></outputs>
+        <errors><error code="PUBLIC_HTTP_FAILURE" /></errors>
+      </contract>
+      <interface><export-get_products PURPOSE="GET /v1/public/products list endpoint with cursor pagination." /></interface>
+      <depends>M-SVC-PRODUCT, M-SVC-OFFER</depends>
+      <target><source>app/api/v1/public.py</source><tests>tests/api/test_public_api.py</tests></target>
+      <observability><log-prefix>[PublicApi]</log-prefix><critical-block>BLOCK_HANDLE_PUBLIC_PRODUCTS</critical-block></observability>
+      <verification-ref>V-M-API-PUBLIC</verification-ref>
+      <notes><note-1>All route handlers remain async def with awaited service calls only.</note-1></notes>
+    </M-API-PUBLIC>
+
+    <M-API-ADMIN-AUTH NAME="AdminAuthApi" TYPE="ENTRY_POINT" LAYER="4" ORDER="2" STATUS="phase1-complete">
+      <contract>
+        <purpose>Expose the admin login endpoint that validates credentials and returns a Bearer JWT.</purpose>
+        <inputs><param name="credentials" type="AdminLoginRequest" /></inputs>
+        <outputs><param name="token-response" type="BearerTokenResponse" /></outputs>
+        <errors><error code="HTTP_401" /></errors>
+      </contract>
+      <interface><export-login PURPOSE="POST /v1/admin/auth/login endpoint." /></interface>
+      <depends>M-AUTH</depends>
+      <target><source>app/api/v1/admin/auth.py</source><tests>tests/api/test_admin_auth_api.py</tests></target>
+      <observability><log-prefix>[AdminAuthApi]</log-prefix><critical-block>BLOCK_HANDLE_LOGIN</critical-block></observability>
+      <verification-ref>V-M-API-ADMIN-AUTH</verification-ref>
+      <notes><note-1>Future merchant auth reuses the same auth primitives but different claims and scopes.</note-1></notes>
+    </M-API-ADMIN-AUTH>
+
+    <M-API-ADMIN-CATALOG NAME="AdminCatalogApi" TYPE="ENTRY_POINT" LAYER="4" ORDER="3" STATUS="phase1-complete">
+      <contract>
+        <purpose>Expose admin CRUD endpoints for products, sellers, offers, and product image uploads.</purpose>
+        <inputs><param name="authorized-http-request" type="FastAPIRequest" /></inputs>
+        <outputs><param name="catalog-mutation-response" type="AdminCatalogResponse" /></outputs>
+        <errors><error code="ADMIN_HTTP_FAILURE" /></errors>
+      </contract>
+      <interface><export-upload_image PURPOSE="POST /v1/admin/products/{id}/image endpoint." /></interface>
+      <depends>M-AUTH, M-SVC-ADMIN</depends>
+      <target><source>app/api/v1/admin/catalog.py</source><tests>tests/api/test_admin_catalog_api.py</tests></target>
+      <observability><log-prefix>[AdminCatalogApi]</log-prefix><critical-block>BLOCK_HANDLE_IMAGE_UPLOAD</critical-block></observability>
+      <verification-ref>V-M-API-ADMIN-CATALOG</verification-ref>
+      <notes><note-1>Phase 1 keeps admin scope platform-wide; merchant scoping is injected later beneath this surface.</note-1></notes>
+    </M-API-ADMIN-CATALOG>
+
+    <M-API-AGENT NAME="AgentApi" TYPE="ENTRY_POINT" LAYER="4" ORDER="4" STATUS="phase1-complete">
+      <contract>
+        <purpose>Expose llms.txt, capability context, and natural-language search endpoints for external LLM agents.</purpose>
+        <inputs><param name="agent-http-request" type="FastAPIRequest" /></inputs>
+        <outputs><param name="agent-http-response" type="ManifestOrSearchPayload" /></outputs>
+        <errors><error code="AGENT_HTTP_FAILURE" /></errors>
+      </contract>
+      <interface><export-search PURPOSE="POST /v1/agent/search with X-Query-Interpreted response header." /></interface>
+      <depends>M-SVC-AGENT, M-SVC-PRODUCT</depends>
+      <target><source>app/api/v1/agent.py</source><tests>tests/api/test_agent_api.py</tests></target>
+      <observability><log-prefix>[AgentApi]</log-prefix><critical-block>BLOCK_HANDLE_AGENT_SEARCH</critical-block></observability>
+      <verification-ref>V-M-API-AGENT</verification-ref>
+      <notes><note-1>GET /llms.txt is treated as part of the agent discovery surface even though it sits at the root path.</note-1></notes>
+    </M-API-AGENT>
+
+    <M-FE-WIDGET-CARD NAME="FrontendProductCardWidget" TYPE="UI_COMPONENT" LAYER="4" ORDER="1" STATUS="phase1b">
+      <contract>
+        <purpose>Render catalog product cards with thumbnail, pricing, stock, and nearest delivery data.</purpose>
+        <inputs><param name="product" type="ProductListItem" /></inputs>
+        <outputs><param name="selection-event" type="ProductSelectionEmit" /></outputs>
+        <errors><error code="CARD_RENDER_FAILURE" /></errors>
+      </contract>
+      <interface><export-product-card PURPOSE="ProductCard widget public export." /></interface>
+      <depends>M-FE-ENTITIES-PRODUCT, M-FE-SHARED-LIB</depends>
+      <target>
+        <source>../kodex-frontend/src/widgets/product-card/ProductCard.vue</source>
+        <source>../kodex-frontend/src/widgets/product-card/index.ts</source>
+        <tests>../kodex-frontend/src/widgets/product-card/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[ProductCard]</log-prefix><critical-block>BLOCK_RENDER_CARD</critical-block></observability>
+      <verification-ref>V-M-FE-WIDGET-CARD</verification-ref>
+      <notes><note-1>Pure rendering plus select emit; modal state lives outside the widget.</note-1></notes>
+    </M-FE-WIDGET-CARD>
+
+    <M-FE-WIDGET-MODAL NAME="FrontendProductModalWidget" TYPE="UI_COMPONENT" LAYER="4" ORDER="2" STATUS="phase1b">
+      <contract>
+        <purpose>Render product details in a modal and re-fetch offers when the selected sort changes.</purpose>
+        <inputs><param name="product-id" type="string|null" /></inputs>
+        <outputs><param name="modal-state" type="ProductModalExports" /></outputs>
+        <errors><error code="MODAL_FETCH_FAILED" /></errors>
+      </contract>
+      <interface><export-product-modal PURPOSE="ProductModal widget public export." /></interface>
+      <depends>M-FE-ENTITIES-PRODUCT, M-FE-FEATURE-SORT, M-FE-SHARED-LIB</depends>
+      <target>
+        <source>../kodex-frontend/src/widgets/product-modal/ProductModal.vue</source>
+        <source>../kodex-frontend/src/widgets/product-modal/index.ts</source>
+        <tests>../kodex-frontend/src/widgets/product-modal/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[ProductModal]</log-prefix><critical-block>BLOCK_FETCH_ON_ID_CHANGE</critical-block></observability>
+      <verification-ref>V-M-FE-WIDGET-MODAL</verification-ref>
+      <notes><note-1>Owns detail fetching and sort-triggered re-fetch; fetches only when a product id is present.</note-1></notes>
+    </M-FE-WIDGET-MODAL>
+
+    <M-FE-WIDGET-TABLE NAME="FrontendProductsTableWidget" TYPE="UI_COMPONENT" LAYER="4" ORDER="3" STATUS="phase1b">
+      <contract>
+        <purpose>Render the admin products table and emit edit, delete, and image-upload actions.</purpose>
+        <inputs><param name="products" type="AdminProduct[]" /></inputs>
+        <outputs><param name="table-action-events" type="ProductsTableEmits" /></outputs>
+        <errors><error code="TABLE_RENDER_FAILURE" /></errors>
+      </contract>
+      <interface><export-products-table PURPOSE="ProductsTable widget public export." /></interface>
+      <depends>M-FE-ENTITIES-PRODUCT, M-FE-SHARED-UI</depends>
+      <target>
+        <source>../kodex-frontend/src/widgets/products-table/ProductsTable.vue</source>
+        <source>../kodex-frontend/src/widgets/products-table/index.ts</source>
+        <tests>../kodex-frontend/src/widgets/products-table/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[ProductsTable]</log-prefix><critical-block>BLOCK_TABLE_ACTIONS</critical-block></observability>
+      <verification-ref>V-M-FE-WIDGET-TABLE</verification-ref>
+      <notes><note-1>Emits actions only; all mutations remain page or feature-owned.</note-1></notes>
+    </M-FE-WIDGET-TABLE>
+
+    <M-FE-PAGE-CATALOG NAME="FrontendCatalogPage" TYPE="UI_COMPONENT" LAYER="5" ORDER="1" STATUS="phase1b">
+      <contract>
+        <purpose>Assemble the public catalog page, agent search bar, infinite scroll grid, and thin product fallback page.</purpose>
+        <inputs><param name="catalog-state" type="CatalogPageInputs" /></inputs>
+        <outputs><param name="catalog-page" type="CatalogPageExports" /></outputs>
+        <errors><error code="CATALOG_PAGE_FAILURE" /></errors>
+      </contract>
+      <interface><export-catalog-page PURPOSE="Catalog page and product fallback public exports." /></interface>
+      <depends>M-FE-WIDGET-CARD, M-FE-WIDGET-MODAL, M-FE-FEATURE-SCROLL, M-FE-FEATURE-VOICE</depends>
+      <target>
+        <source>../kodex-frontend/src/pages/catalog/CatalogPage.vue</source>
+        <source>../kodex-frontend/src/pages/catalog/index.ts</source>
+        <source>../kodex-frontend/src/pages/product/ProductPage.vue</source>
+        <source>../kodex-frontend/src/pages/product/index.ts</source>
+        <tests>../kodex-frontend/src/pages/catalog/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[CatalogPage]</log-prefix><critical-block>BLOCK_AGENT_SEARCH_HANDLER</critical-block></observability>
+      <verification-ref>V-M-FE-PAGE-CATALOG</verification-ref>
+      <notes><note-1>Owns list reset after agent search and selection state for the modal.</note-1></notes>
+    </M-FE-PAGE-CATALOG>
+
+    <M-FE-PAGE-ADMIN NAME="FrontendAdminPages" TYPE="UI_COMPONENT" LAYER="5" ORDER="2" STATUS="phase1b">
+      <contract>
+        <purpose>Assemble the admin login page and authenticated admin catalog management page.</purpose>
+        <inputs><param name="admin-page-state" type="AdminPageInputs" /></inputs>
+        <outputs><param name="admin-pages" type="AdminPageExports" /></outputs>
+        <errors><error code="ADMIN_PAGE_FAILURE" /></errors>
+      </contract>
+      <interface><export-admin-pages PURPOSE="LoginPage and AdminPage public exports." /></interface>
+      <depends>M-FE-FEATURE-AUTH, M-FE-WIDGET-TABLE, M-FE-ENTITIES-PRODUCT</depends>
+      <target>
+        <source>../kodex-frontend/src/pages/admin/LoginPage.vue</source>
+        <source>../kodex-frontend/src/pages/admin/AdminPage.vue</source>
+        <source>../kodex-frontend/src/pages/admin/index.ts</source>
+        <tests>../kodex-frontend/src/pages/admin/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[AdminPage]</log-prefix><critical-block>BLOCK_LOAD_PRODUCTS</critical-block></observability>
+      <verification-ref>V-M-FE-PAGE-ADMIN</verification-ref>
+      <notes><note-1>Protects admin data loading behind token checks and shared client auth interceptors.</note-1></notes>
+    </M-FE-PAGE-ADMIN>
+
+    <M-APP NAME="BackendApp" TYPE="ENTRY_POINT" LAYER="5" ORDER="1" STATUS="phase1-complete">
+      <contract>
+        <purpose>Wire FastAPI application startup, middleware, routers, CORS, and root discovery endpoints.</purpose>
+        <inputs><param name="router-modules" type="ApiRouters" /></inputs>
+        <outputs><param name="fastapi-app" type="FastAPIApplication" /></outputs>
+        <errors><error code="APP_BOOT_FAILURE" /></errors>
+      </contract>
+      <interface><export-app PURPOSE="FastAPI application entry point for uvicorn." /></interface>
+      <depends>M-API-PUBLIC, M-API-ADMIN-AUTH, M-API-ADMIN-CATALOG, M-API-AGENT, M-CONFIG</depends>
+      <target><source>app/main.py</source><tests>tests/test_app_boot.py</tests></target>
+      <observability><log-prefix>[App]</log-prefix><critical-block>BLOCK_REGISTER_ROUTERS</critical-block></observability>
+      <verification-ref>V-M-APP</verification-ref>
+      <notes><note-1>CORS must explicitly allow localhost:5173 for Phase 1 frontend development.</note-1></notes>
+    </M-APP>
+
+    <M-SEED NAME="Seed" TYPE="UTILITY" LAYER="5" ORDER="2" STATUS="phase1-complete">
+      <contract>
+        <purpose>Populate a fresh database with demo merchant, products, sellers, attributes, offers, and valid delivery dates.</purpose>
+        <inputs><param name="seed-config" type="SeedParameters" /></inputs>
+        <outputs><param name="seed-summary" type="SeedCounts" /></outputs>
+        <errors><error code="SEED_FAILURE" /></errors>
+      </contract>
+      <interface><export-run_seed PURPOSE="Seed database and storage references for local/demo environments." /></interface>
+      <depends>M-DB, M-MIGRATIONS, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <target><source>seed.py</source><tests>tests/test_seed.py</tests></target>
+      <observability><log-prefix>[Seed]</log-prefix><critical-block>BLOCK_GENERATE_DELIVERY_DATES</critical-block></observability>
+      <verification-ref>V-M-SEED</verification-ref>
+      <notes><note-1>delivery_date generation must always use today() + randint(0,6) and assign products to the demo merchant.</note-1></notes>
+    </M-SEED>
+
+    <M-FE-APP NAME="FrontendApp" TYPE="ENTRY_POINT" LAYER="6" ORDER="1" STATUS="phase1b">
+      <contract>
+        <purpose>Wire Vue app bootstrap, Pinia, Router, page shells, and global providers.</purpose>
+        <inputs><param name="page-routes" type="PageExports" /></inputs>
+        <outputs><param name="vue-app" type="VueApplication" /></outputs>
+        <errors><error code="FRONTEND_BOOT_FAILURE" /></errors>
+      </contract>
+      <interface><export-bootstrap PURPOSE="Vue application bootstrap and route registration." /></interface>
+      <depends>M-FE-TOOLING, M-FE-PAGE-CATALOG, M-FE-PAGE-ADMIN, M-FE-SHARED-API</depends>
+      <target>
+        <source>../kodex-frontend/src/main.ts</source>
+        <source>../kodex-frontend/src/app/index.ts</source>
+        <source>../kodex-frontend/src/app/router.ts</source>
+        <source>../kodex-frontend/src/app/App.vue</source>
+        <tests>../kodex-frontend/src/app/*.spec.ts</tests>
+      </target>
+      <observability><log-prefix>[FrontendApp]</log-prefix><critical-block>BLOCK_ROUTE_GUARDS</critical-block></observability>
+      <verification-ref>V-M-FE-APP</verification-ref>
+      <notes><note-1>Owns app bootstrap and route guards only; page behavior stays in page modules.</note-1></notes>
+    </M-FE-APP>
+
+    <M-MERCHANT NAME="MerchantPortal" TYPE="CORE_LOGIC" LAYER="3" ORDER="6" STATUS="phase2">
+      <contract>
+        <purpose>Enable merchant-scoped self-service catalog management on top of the Phase 1 prepared schema.</purpose>
+        <inputs><param name="merchant-claims" type="MerchantJwtClaims" /></inputs>
+        <outputs><param name="merchant-scoped-actions" type="MerchantCatalogActions" /></outputs>
+        <errors><error code="MERCHANT_SCOPE_VIOLATION" /></errors>
+      </contract>
+      <interface><export-merchant-catalog-service PURPOSE="Merchant-only catalog command surface." /></interface>
+      <depends>M-AUTH, M-REPO-ADMIN, M-MODELS-PLATFORM</depends>
+      <target><source>app/services/merchant_portal_service.py</source><tests>tests/services/test_merchant_portal_service.py</tests></target>
+      <observability><log-prefix>[MerchantPortal]</log-prefix><critical-block>BLOCK_ENFORCE_MERCHANT_SCOPE</critical-block></observability>
+      <verification-ref>V-M-MERCHANT</verification-ref>
+      <notes><note-1>Planned after Phase 1 once merchant JWTs and scoped admin UI are introduced.</note-1></notes>
+    </M-MERCHANT>
+
+    <M-RBAC NAME="RbacPolicy" TYPE="UTILITY" LAYER="2" ORDER="6" STATUS="phase2">
+      <contract>
+        <purpose>Centralize role and merchant scope checks shared by future merchant and support actors.</purpose>
+        <inputs><param name="claims" type="JwtClaims" /></inputs>
+        <outputs><param name="authorization-decision" type="AllowOrDeny" /></outputs>
+        <errors><error code="RBAC_DENIED" /></errors>
+      </contract>
+      <interface><export-require_role PURPOSE="Role and merchant-aware authorization helpers." /></interface>
+      <depends>M-AUTH, M-CONFIG</depends>
+      <target><source>app/core/rbac.py</source><tests>tests/core/test_rbac.py</tests></target>
+      <observability><log-prefix>[RBAC]</log-prefix><critical-block>BLOCK_CHECK_ROLE_SCOPE</critical-block></observability>
+      <verification-ref>V-M-RBAC</verification-ref>
+      <notes><note-1>Phase 1 JWT shape must already accommodate this future module.</note-1></notes>
+    </M-RBAC>
+
+    <M-SEARCH NAME="SearchService" TYPE="CORE_LOGIC" LAYER="3" ORDER="7" STATUS="future">
+      <contract>
+        <purpose>Extend catalog retrieval with richer full-text, semantic, and ranking strategies beyond Phase 1 intent parsing.</purpose>
+        <inputs><param name="search-query" type="SearchIntent" /></inputs>
+        <outputs><param name="ranked-results" type="RankedProductList" /></outputs>
+        <errors><error code="SEARCH_FAILURE" /></errors>
+      </contract>
+      <interface><export-run_search PURPOSE="Future search orchestration beyond the base product repository filters." /></interface>
+      <depends>M-REPO-PRODUCT, M-MODELS-CATALOG</depends>
+      <target><source>app/services/search_service.py</source><tests>tests/services/test_search_service.py</tests></target>
+      <observability><log-prefix>[SearchService]</log-prefix><critical-block>BLOCK_RANK_RESULTS</critical-block></observability>
+      <verification-ref>V-M-SEARCH</verification-ref>
+      <notes><note-1>Phase 1 search_vector and GIN index are laid down specifically for this expansion path.</note-1></notes>
+    </M-SEARCH>
+
+    <M-RECOMMENDATIONS NAME="RecommendationsService" TYPE="INTEGRATION" LAYER="3" ORDER="8" STATUS="future">
+      <contract>
+        <purpose>Introduce optional recommendation engine integration behind disabled-by-default feature flags.</purpose>
+        <inputs><param name="recommendation-context" type="RecommendationRequest" /></inputs>
+        <outputs><param name="recommendations" type="ProductRecommendations" /></outputs>
+        <errors><error code="RECOMMENDATION_FAILURE" /></errors>
+      </contract>
+      <interface><export-get_recommendations PURPOSE="Future optional recommendation provider adapter." /></interface>
+      <depends>M-CONFIG, M-REPO-PRODUCT</depends>
+      <target><source>app/services/recommendations_service.py</source><tests>tests/services/test_recommendations_service.py</tests></target>
+      <observability><log-prefix>[Recommendations]</log-prefix><critical-block>BLOCK_FETCH_RECOMMENDATIONS</critical-block></observability>
+      <verification-ref>V-M-RECOMMENDATIONS</verification-ref>
+      <notes><note-1>Feature flags already exist in the environment contract, but stay disabled in Phase 1.</note-1></notes>
+    </M-RECOMMENDATIONS>
+
+    <M-ORDERS NAME="OrdersDomain" TYPE="CORE_LOGIC" LAYER="3" ORDER="9" STATUS="future">
+      <contract>
+        <purpose>Support post-ТЗ order placement, fulfillment, and merchant operational workflows.</purpose>
+        <inputs><param name="order-command" type="OrderMutation" /></inputs>
+        <outputs><param name="order-state" type="OrderAggregate" /></outputs>
+        <errors><error code="ORDER_FAILURE" /></errors>
+      </contract>
+      <interface><export-create_order PURPOSE="Future order creation and lifecycle surface." /></interface>
+      <depends>M-DB, M-MODELS-CATALOG, M-MODELS-PLATFORM</depends>
+      <target><source>app/services/orders_service.py</source><tests>tests/services/test_orders_service.py</tests></target>
+      <observability><log-prefix>[Orders]</log-prefix><critical-block>BLOCK_TRANSITION_ORDER_STATE</critical-block></observability>
+      <verification-ref>V-M-ORDERS</verification-ref>
+      <notes><note-1>Explicitly excluded from Phase 1, but reserved in the roadmap for the broader marketplace platform.</note-1></notes>
+    </M-ORDERS>
+
+    <M-AGENT-AUDIT NAME="AgentAudit" TYPE="DATA_LAYER" LAYER="2" ORDER="7" STATUS="phase2">
+      <contract>
+        <purpose>Expand Phase 1 agent_requests persistence into richer analytics, replay, and operational tracing.</purpose>
+        <inputs><param name="agent-event" type="AgentAuditEvent" /></inputs>
+        <outputs><param name="audit-record" type="PersistedAuditEvent" /></outputs>
+        <errors><error code="AGENT_AUDIT_FAILURE" /></errors>
+      </contract>
+      <interface><export-record_agent_event PURPOSE="Future richer audit/event writer over the prepared agent_requests table." /></interface>
+      <depends>M-DB, M-MODELS-PLATFORM</depends>
+      <target><source>app/services/agent_audit_service.py</source><tests>tests/services/test_agent_audit_service.py</tests></target>
+      <observability><log-prefix>[AgentAudit]</log-prefix><critical-block>BLOCK_PERSIST_AGENT_EVENT</critical-block></observability>
+      <verification-ref>V-M-AGENT-AUDIT</verification-ref>
+      <notes><note-1>Phase 1 writes the minimal audit shape; Phase 2 enriches it with analytics and replay semantics.</note-1></notes>
+    </M-AGENT-AUDIT>
+  </Modules>
+  <!-- END_BLOCK_MODULES -->
+
+  <!-- START_BLOCK_DATA_FLOW -->
+  <DataFlow>
+    <DF-001 NAME="VisitorBrowseCatalog" TRIGGER="GET /v1/public/products">
+      <step-1>PublicApi validates cursor and delegates to ProductService.</step-1>
+      <step-2>ProductService calls ProductRepository.list_paginated() with scalar subquery MIN(offers.delivery_date).</step-2>
+      <step-3>ProductRepository returns items ordered for stable cursor pagination without N+1 queries.</step-3>
+      <step-4>PublicApi returns {items, next_cursor} plus X-Total-Count header.</step-4>
+      <evidence>[PublicApi][get_products][BLOCK_HANDLE_PUBLIC_PRODUCTS], [ProductRepo][list_paginated][BLOCK_LIST_PAGINATED]</evidence>
+    </DF-001>
+
+    <DF-002 NAME="VisitorViewProductDetail" TRIGGER="GET /v1/public/products/{id}">
+      <step-1>PublicApi resolves a product by id through ProductService.</step-1>
+      <step-2>ProductService loads full product projection and OfferService.sorted_offers for default price ordering.</step-2>
+      <step-3>Frontend feature SortButtons toggles client-side sort requests without full page reload.</step-3>
+      <evidence>[ProductService][detail][BLOCK_BUILD_PUBLIC_PRODUCT_RESPONSE], [OfferService][sort_offers][BLOCK_SORT_OFFERS]</evidence>
+    </DF-002>
+
+    <DF-003 NAME="AdminAuthenticate" TRIGGER="POST /v1/admin/auth/login">
+      <step-1>AdminAuthApi validates request payload and delegates to Auth.login_admin.</step-1>
+      <step-2>Auth verifies password against env-configured credentials and issues a JWT with expiry.</step-2>
+      <step-3>Frontend app stores the Bearer token and injects it into admin requests.</step-3>
+      <evidence>[AdminAuthApi][login][BLOCK_HANDLE_LOGIN], [Auth][login_admin][BLOCK_CREATE_ACCESS_TOKEN]</evidence>
+    </DF-003>
+
+    <DF-004 NAME="AdminUploadImage" TRIGGER="POST /v1/admin/products/{id}/image">
+      <step-1>AdminCatalogApi enforces Bearer auth and delegates to AdminCatalogService.</step-1>
+      <step-2>AdminCatalogService invokes S3Service.upload_product_image() to upload original and thumbnail objects.</step-2>
+      <step-3>AdminCatalogRepository persists image_object_key and thumbnail_object_key on the product.</step-3>
+      <step-4>AdminCatalogApi returns presigned URLs for both stored assets.</step-4>
+      <evidence>[AdminCatalogApi][upload_image][BLOCK_HANDLE_IMAGE_UPLOAD], [S3Service][upload_product_image][BLOCK_UPLOAD_THUMBNAIL_PAIR]</evidence>
+    </DF-004>
+
+    <DF-005 NAME="SeedFreshDatabase" TRIGGER="seed.py">
+      <step-1>Seed bootstraps demo merchant creation through PlatformModels.</step-1>
+      <step-2>Seed creates 100+ products, 5-8 sellers, 2-6 attributes, and 2-8 offers per product.</step-2>
+      <step-3>Every delivery_date uses date.today() + timedelta(days=randint(0,6)).</step-3>
+      <step-4>Seed links every product to the Kodex Demo Store merchant_id.</step-4>
+      <evidence>[Seed][run_seed][BLOCK_GENERATE_DELIVERY_DATES]</evidence>
+    </DF-005>
+
+    <DF-006 NAME="AgentSearchProducts" TRIGGER="POST /v1/agent/search">
+      <step-1>AgentApi accepts natural-language query and delegates to AgentService.</step-1>
+      <step-2>AgentService parses name, max_price, delivery, and stock intents into explicit filter structure.</step-2>
+      <step-3>ProductRepository returns ProductListItem-compatible results using the interpreted filters.</step-3>
+      <step-4>AgentApi responds with results and X-Query-Interpreted header, while agent_requests captures the audit entry.</step-4>
+      <evidence>[AgentApi][search][BLOCK_HANDLE_AGENT_SEARCH], [AgentService][search_products][BLOCK_PARSE_QUERY_INTENT]</evidence>
+    </DF-006>
+
+    <DF-007 NAME="FutureMerchantScopedAccess" TRIGGER="Merchant admin JWT request">
+      <step-1>RBAC validates role=merchant_admin and merchant_id claim.</step-1>
+      <step-2>MerchantPortal delegates scoped catalog operations through AdminCatalogRepository and ProductRepository filters.</step-2>
+      <step-3>Any cross-merchant access attempt is denied before data leaves the service layer.</step-3>
+      <evidence>[RBAC][require_role][BLOCK_CHECK_ROLE_SCOPE], [MerchantPortal][enforce_scope][BLOCK_ENFORCE_MERCHANT_SCOPE]</evidence>
+    </DF-007>
+  </DataFlow>
+  <!-- END_BLOCK_DATA_FLOW -->
+
+  <!-- START_BLOCK_IMPLEMENTATION_ORDER -->
+  <ImplementationOrder>
+    <Phase-0 name="Bootstrap" status="done">
+      <goal>Project identity, governance, infra bootstrap, and planning artifacts exist before any code generation wave.</goal>
+      <step-1 module="M-GOVERNANCE" status="done" verification="V-M-GOVERNANCE">Create AGENTS.md and shared GRACE documents in kodex-backend.</step-1>
+      <step-2 module="M-INFRA-ENV" status="done" verification="V-M-INFRA-ENV">Define .env.example for PostgreSQL, MinIO, auth, CORS, and feature flags.</step-2>
+      <step-3 module="M-INFRA-COMPOSE" status="done" verification="V-M-INFRA-COMPOSE">Bootstrap Docker Compose with healthcheck-gated backend startup and hot reload volumes.</step-3>
+    </Phase-0>
+
+    <Phase-1 name="CorePlatformBackend" status="completed">
+      <goal>Implement the graded backend prototype with schema foresight for multi-merchant expansion.</goal>
+      <step-1 module="M-CONFIG" status="completed" verification="V-M-CONFIG">Implement backend settings and env validation.</step-1>
+      <step-2 module="M-DB" status="completed" verification="V-M-DB">Implement async database engine and session dependency.</step-2>
+      <step-3 module="M-AUTH" status="completed" verification="V-M-AUTH">Implement admin auth and future-ready JWT claims.</step-3>
+      <step-4 module="M-MODELS-CATALOG" status="completed" verification="V-M-MODELS-CATALOG">Define catalog ORM models with merchant_id, status, and search_vector fields.</step-4>
+      <step-5 module="M-MODELS-PLATFORM" status="completed" verification="V-M-MODELS-PLATFORM">Define merchants and agent_requests ORM models.</step-5>
+      <step-6 module="M-MIGRATIONS" status="completed" verification="V-M-MIGRATIONS">Create Phase 1 schema migrations including PHASE_2_PREP artifacts.</step-6>
+      <step-7 module="M-REPO-PRODUCT" status="completed" verification="V-M-REPO-PRODUCT">Implement cursor pagination and detail queries without N+1 behavior.</step-7>
+      <step-8 module="M-REPO-OFFER" status="completed" verification="V-M-REPO-OFFER">Implement offer read and sorting query helpers.</step-8>
+      <step-9 module="M-REPO-ADMIN" status="completed" verification="V-M-REPO-ADMIN">Implement admin catalog mutation persistence.</step-9>
+      <step-10 module="M-S3" status="completed" verification="V-M-S3">Implement async MinIO upload and thumbnail generation.</step-10>
+      <step-11 module="M-SVC-PRODUCT" status="completed" verification="V-M-SVC-PRODUCT">Implement public catalog/detail service layer.</step-11>
+      <step-12 module="M-SVC-OFFER" status="completed" verification="V-M-SVC-OFFER">Implement offer sorting service logic.</step-12>
+      <step-13 module="M-SVC-ADMIN" status="completed" verification="V-M-SVC-ADMIN">Implement admin catalog service and image persistence flow.</step-13>
+      <step-14 module="M-SVC-AGENT" status="completed" verification="V-M-SVC-AGENT">Implement natural-language query interpretation and audit persistence.</step-14>
+      <step-15 module="M-API-PUBLIC" status="completed" verification="V-M-API-PUBLIC">Implement public catalog and product detail routes.</step-15>
+      <step-16 module="M-API-ADMIN-AUTH" status="completed" verification="V-M-API-ADMIN-AUTH">Implement admin login route.</step-16>
+      <step-17 module="M-API-ADMIN-CATALOG" status="completed" verification="V-M-API-ADMIN-CATALOG">Implement admin CRUD and image upload routes.</step-17>
+      <step-18 module="M-API-AGENT" status="completed" verification="V-M-API-AGENT">Implement llms.txt, capability context, and agent search routes.</step-18>
+      <step-19 module="M-APP" status="completed" verification="V-M-APP">Wire FastAPI app, CORS, and router registration.</step-19>
+      <step-20 module="M-SEED" status="completed" verification="V-M-SEED">Implement realistic seed script with demo merchant ownership.</step-20>
+    </Phase-1>
+
+    <Phase-1b name="FrontendAndAgentUx" status="completed">
+      <goal>Implement FSD frontend layers, public catalog UX, admin auth, and agent-first interactions.</goal>
+      <step-1 module="M-FE-TOOLING" status="completed" verification="V-M-FE-TOOLING">Establish package, Vite, TypeScript, ESLint, Docker, env, and HTML tooling files.</step-1>
+      <step-2 module="M-FE-SHARED-API" status="completed" verification="V-M-FE-SHARED-API">Create the shared axios client and agent/public/admin API wrappers.</step-2>
+      <step-3 module="M-FE-SHARED-UI" status="completed" verification="V-M-FE-SHARED-UI">Create shared UI primitives for buttons, badges, and loading states.</step-3>
+      <step-4 module="M-FE-SHARED-LIB" status="completed" verification="V-M-FE-SHARED-LIB">Create shared pure formatting helpers and public exports.</step-4>
+      <step-5 module="M-FE-ENTITIES-PRODUCT" status="completed" verification="V-M-FE-ENTITIES-PRODUCT">Implement product types and public/admin product API adapters.</step-5>
+      <step-6 module="M-FE-ENTITIES-OFFER" status="completed" verification="V-M-FE-ENTITIES-OFFER">Implement offer types and public sort exports.</step-6>
+      <step-7 module="M-FE-ENTITIES-SELLER" status="completed" verification="V-M-FE-ENTITIES-SELLER">Implement seller types and public exports.</step-7>
+      <step-8 module="M-FE-FEATURE-SCROLL" status="completed" verification="V-M-FE-FEATURE-SCROLL">Implement the infinite scroll composable and sentinel lifecycle.</step-8>
+      <step-9 module="M-FE-FEATURE-SORT" status="completed" verification="V-M-FE-FEATURE-SORT">Implement offer sort state and SortButtons.</step-9>
+      <step-10 module="M-FE-FEATURE-AUTH" status="completed" verification="V-M-FE-FEATURE-AUTH">Implement admin auth state, token persistence, and redirects.</step-10>
+      <step-11 module="M-FE-FEATURE-VOICE" status="completed" verification="V-M-FE-FEATURE-VOICE">Implement voice search with graceful Web Speech API fallback.</step-11>
+      <step-12 module="M-FE-WIDGET-CARD" status="completed" verification="V-M-FE-WIDGET-CARD">Implement the catalog product card widget.</step-12>
+      <step-13 module="M-FE-WIDGET-MODAL" status="completed" verification="V-M-FE-WIDGET-MODAL">Implement the product detail modal with sort-triggered re-fetch.</step-13>
+      <step-14 module="M-FE-WIDGET-TABLE" status="completed" verification="V-M-FE-WIDGET-TABLE">Implement the admin products table widget and action emits.</step-14>
+      <step-15 module="M-FE-PAGE-CATALOG" status="completed" verification="V-M-FE-PAGE-CATALOG">Assemble the public catalog page, agent search bar, and product fallback page.</step-15>
+      <step-16 module="M-FE-PAGE-ADMIN" status="completed" verification="V-M-FE-PAGE-ADMIN">Assemble the login page and authenticated admin management page.</step-16>
+      <step-17 module="M-FE-APP" status="completed" verification="V-M-FE-APP">Bootstrap the Vue app, router, Pinia, and route guards.</step-17>
+    </Phase-1b>
+
+    <Phase-2 name="PostTzRoadmap" status="pending">
+      <goal>Expand Kodex into a full multi-merchant Agentic Commerce platform without reworking Phase 1 foundations.</goal>
+      <step-1 module="M-RBAC" status="pending" verification="V-M-RBAC">Implement centralized role and merchant scope enforcement.</step-1>
+      <step-2 module="M-MERCHANT" status="pending" verification="V-M-MERCHANT">Implement merchant self-service portal and scoped admin services.</step-2>
+      <step-3 module="M-AGENT-AUDIT" status="pending" verification="V-M-AGENT-AUDIT">Expand agent audit persistence and replay-ready traces.</step-3>
+      <step-4 module="M-SEARCH" status="pending" verification="V-M-SEARCH">Upgrade search beyond simple interpreted filters.</step-4>
+      <step-5 module="M-RECOMMENDATIONS" status="pending" verification="V-M-RECOMMENDATIONS">Integrate optional recommendation engine behind feature flags.</step-5>
+      <step-6 module="M-ORDERS" status="pending" verification="V-M-ORDERS">Introduce orders and downstream marketplace workflows.</step-6>
+    </Phase-2>
+  </ImplementationOrder>
+  <!-- END_BLOCK_IMPLEMENTATION_ORDER -->
+
+  <!-- START_BLOCK_EXECUTION_POLICY -->
+  <ExecutionPolicy>
+    <default-profile>balanced</default-profile>
+    <controller-owns>docs/development-plan.xml, docs/knowledge-graph.xml, docs/verification-plan.xml, AGENTS.md</controller-owns>
+    <worker-owns>Only approved source files and module-local tests inside the current phase write scope.</worker-owns>
+    <worker-owns>Backend execution must respect the layer chain config/database → models/auth → repositories/S3 → services → APIs → app/seed.</worker-owns>
+    <worker-owns>Frontend execution must proceed shared → entities → features → widgets → pages → app with public-API-only imports.</worker-owns>
+  </ExecutionPolicy>
+  <!-- END_BLOCK_EXECUTION_POLICY -->
+</DevelopmentPlan>
