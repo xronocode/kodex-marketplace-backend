@@ -137,14 +137,30 @@ Kodex includes built-in support for AI agents and LLM integration:
 
 See `docs/ai/AI_WORKFLOW.md` for the complete AI development methodology.
 
+## 🤖 AI Stack
+
+This project was built 100% with AI coding assistants under human engineering supervision:
+
+| Category | Tools |
+|----------|-------|
+| **AI IDEs** | [Antigravity](https://antigravity.ai/) / [Codex](https://openai.com/codex) / [Qwen Code](https://github.com/QwenLM/Qwen) |
+| **Code Editors** | VS Code / [Kilo Code](https://kilocode.ai/) / QwenCode |
+| **LLM Models** | [Claude](https://anthropic.com/) / [Gemini](https://deepmind.google/technologies/gemini/) / Qwen |
+
+### Development Methodology
+
+- **GRACE** (Graph-RAG Anchored Code Engineering) — Contract-first development with semantic markup
+- **Human-in-the-Loop** — All AI-generated code reviewed and validated by senior engineer
+- **Verification-Driven** — Every module has contracts, tests, and knowledge graph links
+
 ## 📄 License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
 ## 🔗 Related Repositories
 
-- **[marketplace-frontend](https://github.com/xronocode/marketplace-frontend)** — Vue 3 + TypeScript frontend
-- **[marketplace-stack](https://github.com/xronocode/marketplace-stack)** — Docker Compose infrastructure
+- **[kodex-marketplace-frontend](https://github.com/xronocode/kodex-marketplace-frontend)** — Vue 3 + TypeScript frontend
+- **[kodex-marketplace-stack](https://github.com/xronocode/kodex-marketplace-stack)** — Docker Compose infrastructure
 
 ## 📖 Documentation
 
