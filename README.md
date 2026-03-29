@@ -1,64 +1,167 @@
 # Kodex Backend
 
-FastAPI backend for Kodex marketplace prototype.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI 0.115](https://img.shields.io/badge/FastAPI-0.115-green.svg)](https://fastapi.tiangolo.com/)
 
-## Stack
+> **AI-Ready Marketplace Platform** — Backend service with Agentic Commerce layer
 
-Python 3.12, FastAPI 0.115.x, SQLAlchemy 2.x async (asyncpg),
-PostgreSQL 16, Alembic, MinIO (aioboto3), Pydantic 2.x, JWT auth.
+Part of the **Kodex** open-source marketplace platform built entirely using AI tools under the **GRACE** methodology (Graph-RAG Anchored Code Engineering).
 
-## Run (via Docker Compose)
+## 🚀 Features
 
-See `../kodex-infra/README.md` for the recommended full-stack start.
+- **Public Catalog API** — Cursor-paginated product listing with 110+ seeded products
+- **Admin CRUD** — Full product/catalog management with JWT authentication
+- **Agent Layer** — Natural language search, structured context endpoint, `llms.txt` manifest
+- **Image Storage** — MinIO integration with presigned URLs and auto-thumbnail generation
+- **Async Architecture** — Fully async SQLAlchemy 2.x with asyncpg driver
+- **Multi-Merchant Ready** — Schema prepared for Phase 2 RBAC expansion
 
-## Run standalone (development)
+## 📦 Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Framework | FastAPI 0.115.x |
+| Database | PostgreSQL 16 + SQLAlchemy 2.x (async) |
+| Driver | asyncpg |
+| Migrations | Alembic 1.14.x |
+| Object Storage | MinIO (S3-compatible, aioboto3) |
+| Auth | python-jose (JWT), passlib[bcrypt] |
+| Validation | Pydantic 2.x |
+| Testing | pytest 8.x |
+
+## 🏁 Quick Start
+
+### Option 1: Docker Compose (Recommended)
 
 ```bash
-cd kodex-backend
+# From the kodex-infra directory
+cd ../kodex-infra
+docker compose up --build
+```
+
+Backend will be available at http://localhost:8000
+
+### Option 2: Local Development
+
+```bash
+# Create virtual environment
 python -m venv .venv && source .venv/bin/activate
+
+# Install dependencies
 pip install -e ".[dev]"
-cp ../kodex-infra/.env.example .env   # edit DB/S3 URLs for local services
+
+# Configure environment
+cp ../kodex-infra/.env.example .env
+
+# Run migrations
 alembic upgrade head
+
+# Seed test data (110 products)
 python seed.py
+
+# Start server
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Run tests
+## 📚 API Reference
 
-```bash
-pytest tests/ -v
-```
+| Endpoint | Description | Auth |
+|----------|-------------|------|
+| `GET /health` | Liveness probe | Public |
+| `GET /v1/public/products` | Catalog listing (cursor pagination) | Public |
+| `GET /v1/public/products/{id}` | Product detail with offers | Public |
+| `POST /v1/admin/auth/login` | Admin JWT authentication | Public |
+| `POST /v1/admin/products` | Create product | JWT Required |
+| `PUT /v1/admin/products/{id}` | Update product | JWT Required |
+| `POST /v1/admin/products/{id}/image` | Upload product image | JWT Required |
+| `GET /v1/agent/context` | Structured capability JSON | Public |
+| `POST /v1/agent/search` | Natural language product search | Public |
+| `GET /llms.txt` | Machine-readable capability manifest | Public |
 
-## API reference
-
+**Interactive Docs:**
 - Swagger UI: http://localhost:8000/docs
 - OpenAPI JSON: http://localhost:8000/openapi.json
-- Agent manifest: http://localhost:8000/v1/agent/context
-- llms.txt: http://localhost:8000/llms.txt
 
-## Project structure
+## 🧪 Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ -v --cov=app --cov-report=html
+
+# Run specific test category
+pytest tests/api/ -v          # API integration tests
+pytest tests/services/ -v     # Service layer tests
+pytest tests/repositories/ -v # Repository layer tests
+```
+
+## 📁 Project Structure
 
 ```
 app/
-  core/          config, database, auth
-  models/        SQLAlchemy ORM models
-  repositories/  async data access layer
-  schemas/       Pydantic request/response schemas
-  services/      business logic + S3
-  api/v1/        FastAPI routers (public, admin, agent)
-  main.py        app assembly + lifespan
-seed.py          test data (110 products, dynamic dates)
-alembic/         migrations
-tests/           smoke tests
-docs/ai/         AI_WORKFLOW.md, PROMPTS.md, session exports
+├── core/          # Config, database connection, auth utilities
+├── models/        # SQLAlchemy ORM models (catalog, platform)
+├── repositories/  # Async data access layer
+├── schemas/       # Pydantic request/response schemas
+├── services/      # Business logic + S3 integration
+├── api/v1/        # FastAPI routers (public, admin, agent)
+└── main.py        # Application assembly + lifespan events
+
+alembic/           # Database migrations
+tests/             # Comprehensive test suite
+docs/ai/           # AI workflow documentation
+seed.py            # Test data generator (Faker)
 ```
 
-## Key architecture decisions
+## 🔑 Key Architecture Decisions
 
-- Fully async — asyncpg driver, SQLAlchemy async session, aioboto3
-- Cursor pagination with base64 UUID cursors
-- Presigned URLs for images (ExpiresIn=3600)
-- Thumbnail generation via Pillow (max 300×300 JPEG)
-- Agent layer: /v1/agent/context, /v1/agent/search, /llms.txt
-- Schema foresight: merchant_id + status + search_vector on products
-  (Phase 2 multi-merchant preparation)
+1. **Fully Async** — asyncpg driver, SQLAlchemy async sessions, aioboto3 for S3
+2. **Cursor Pagination** — Base64-encoded UUID cursors with `X-Total-Count` header
+3. **Dynamic Delivery Dates** — Computed on-the-fly via SQL subquery (never hardcoded)
+4. **Presigned URLs** — 1-hour expiration for product images
+5. **Auto-Thumbnails** — Max 300×300 JPEG generated on upload
+6. **Schema Foresight** — `merchant_id`, `status`, `search_vector` fields ready for Phase 2
+7. **Structured Logging** — `[Module][function][BLOCK_NAME]` format
+
+## 🤖 AI-Ready Features
+
+Kodex includes built-in support for AI agents and LLM integration:
+
+- **`/llms.txt`** — Standardized machine-readable capability manifest
+- **`/v1/agent/context`** — Structured JSON describing API capabilities
+- **`/v1/agent/search`** — Natural language product search with intent parsing
+- **Semantic Markup** — GRACE methodology with `MODULE_CONTRACT` and block markers
+
+See `docs/ai/AI_WORKFLOW.md` for the complete AI development methodology.
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+## 🔗 Related Repositories
+
+- **[marketplace-frontend](https://github.com/xronocode/marketplace-frontend)** — Vue 3 + TypeScript frontend
+- **[marketplace-stack](https://github.com/xronocode/marketplace-stack)** — Docker Compose infrastructure
+
+## 📖 Documentation
+
+- [Development Plan](docs/development-plan.xml)
+- [Knowledge Graph](docs/knowledge-graph.xml)
+- [Requirements](docs/requirements.xml)
+- [Technology Stack](docs/technology.xml)
+- [Verification Plan](docs/verification-plan.xml)
+
+## 🛠 Development Conventions
+
+- All handlers must be `async def`
+- No sync SQLAlchemy — async only
+- Alembic is CLI-only (never run migrations in handlers)
+- No secrets in code — all via environment variables
+- Structured logging with module/function/block context
+
+---
+
+**Built with ❤️ using AI + Human Engineering Supervision**
