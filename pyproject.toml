@@ -27,6 +27,7 @@ dependencies = [
     "fastapi>=0.115.0,<0.116",
     "sqlalchemy[asyncio]>=2.0,<3",
     "asyncpg",
+    "psycopg2-binary",
     "alembic>=1.14,<1.15",
     "aioboto3>=13,<14",
     "pydantic-settings>=2,<3",
